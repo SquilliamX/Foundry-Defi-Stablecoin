@@ -6,8 +6,9 @@ Search for the Department Names with `ctrl + F`:
 
 Getting Started Notes
     - Layout of Solidity Files/Contracts
+    - When Beginning To Write A New Contract Help Notes 
     - CEI (Checks, Effects, Interactions) Notes
-    - Modifier Notes:
+    - Modifier Notes
     - Visibility Modifier Notes 
     - Variable Notes
         - Constant Notes
@@ -160,6 +161,34 @@ Layout of Functions:
  9. external & public view & pure functions
 
 
+
+
+### When Beginning To Write A New Contract Help Notes
+
+When beginning to write a new contract, think about what you want the contract to do, break it down into function, and write the interface of these function out so it becomes easier to see.
+
+example from foundry-defi-stablecoin-f23:
+```js
+contract DSCEngine {
+    function depositCollateralAndMintDsc() external {}
+
+    function depositCollateral() external {}
+
+    function redeemCollateralForDsc() external {}
+
+    function redeemCollateral() external {}
+
+    function mintDsc() external {}
+
+    function burnDsc() external {}
+
+    function liquidate() external {}
+
+    function getHealthFactor() external view {}
+}
+```
+
+
 ### CEI (Checks, Effects, Interactions) Notes
  When writing smart contacts, you always want to follow the CEI (Checks, Effects, Interactions) pattern in order to prevent reentrancy vulnerabilities and other vulnerabilities.
  This would look like
@@ -178,12 +207,39 @@ function exampleCEI() public {
  ```
 
 
-### Modifier Notes:
+### Modifier Notes
 
 Sometimes you will type alot of the same code over and over. To keep things simple and non-redundant, you can use a modifier.
 
 Modifiers are written with a `_;` before/after the code logic. The `_;` means to execute the code before or after the modifier code logic. The modifier will always execute first in the code function so `_;` represents whether to execute the function logic before or after the modifier.
-example:
+examples:
+
+
+```js
+contract DSCEngine {
+    /* Errors */
+    error DSCEngine__NeedsMoreThanZero();
+
+    /* Modifiers */
+    modifier moreThanZero(uint256 amount) {
+        if (amount == 0) {
+            revert DSCEngine__NeedsMoreThanZero();
+        }
+        _;
+    }
+
+    /*
+    * @dev `@param` means the definitions of the parameters that the function takes.
+    * @param tokenCollateralAddress: the address of the token that users are depositing as collateral
+    * @param amountCollateral: the amount of tokens they are depositing
+    */
+    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral) external moreThanZero(amountCollateral) {}
+}
+```
+As you can see from the example above, we created a modifier with a custom error. The modifier takes a parameter of a `uint256` named `amount`. When using this modifier, we pass the `uint256 amountCollateral` parameter used in the `function depositCollateral` as the parameter that the modifier uses. This needs to be done when your modifier has a parameter or you will get an error.
+
+
+
 ```js
  modifier raffleEntered() {
         vm.prank(PLAYER);
@@ -2468,7 +2524,7 @@ It is important to check the contracts, functions, and parameters being sent whe
 
 ## TIPS AND TRICKS
 
-run `forge fmt` to auto format your code.
+run `forge fmt` to auto format your code. If you run `forge fmt` and it is not formatting the way you want, then go to you solidity extension (should be Nomic Foundation's Solidity), click settings, extension settings, and toggle the solidity formatter setting between prettier & forge to set the one you like more. Then when you save your code or run `forge fmt` it should format correctly.
 
 run `forge coverage` to see how many lines of code have been tested.
 
