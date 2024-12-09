@@ -24,7 +24,8 @@ Getting Started Notes
     - Enum Notes
     - Call and staticcall differences Notes
     - Inheritance Notes
-    - Inheriting Constructor Notes
+        - `Super` (Inheritance) keyword Notes
+        - Inheriting Constructor Notes
     - Override Notes
     - Modulo Notes
     - Sending Money in Solidity Notes
@@ -102,6 +103,8 @@ EIP Notes
 
 DeFi Notes
     - StableCoin Notes
+    - Why We Care About Stablecoins Notes
+    - Different Categories/Properties of StableCoins
 
 Keyboard Shortcuts
 
@@ -768,6 +771,37 @@ import {VRFConsumerBaseV2Plus} from "@chainlink/contracts/src/v0.8/vrf/dev/VRFCo
 contract Raffle is VRFConsumerBaseV2Plus {}
 ```
 After inheriting contracts, you can use variables from the parent contract in the child contract.
+
+
+#### `Super` (Inheritance) keyword Notes
+
+The keyword super should be used when we override a function from a parent contract, want to add logic, but still also call the regular function with all its logic from the parent contract.
+example from foundry-defi-stablecoin-f23:
+```js
+
+contract DecentralizedStableCoin is ERC20Burnable, Ownable {
+    // ... skipped code
+
+  function burn(uint256 _amount) public override onlyOwner {
+        // balance variable is the msg.sender's current balance
+        uint256 balance = balanceOf(msg.sender);
+        // if the amount they input is less than or equal to 0 revert.
+        if (_amount <= 0) {
+            revert DecentralizedStableCoin__MustBeMoreThanZero();
+        }
+        // if the msg.sender's balance is less than the amount they try to burn, revert.
+        if (balance < _amount) {
+            revert DecentralizedStableCoin__BurnAmountExceedsBalance();
+        }
+        // calls the burn function from the parent class
+        // `super` means to call the parent contract(ERC20Burnable) and call the function `burn` from the parent contract
+        // super is used because we overrided the contract, and we also want to complete the if statements above and do the regular burn function in the parent contract
+        super.burn(_amount);
+    }
+
+    // ... skipped code
+}
+```
 
 
 
@@ -3969,14 +4003,14 @@ A stablecoin is a non-volatile crypto asset.
 
 A stablecoin is a crypto asset whose buying power fluctuates very little relative to the rest of the market/stablecoins stay relatively stable. A stablecoin is a crypto asset whose buying power stays relatively the same.
 
-#### Why do we care about stablecoins?
+#### Why We Care About Stablecoins Notes
 
 In every type of society, we need some type of low volatility/stable currency to fulfull the 3 functions of money:
-1. Storage of Value: a way to keep the value/wealth we've generated. Putting dollars in your bank account, or buying stocks/cryptos are a good example of storing your value. Apples would make for a poor storage of value since they would rot over time and lose their value.
+1. `Storage of Value`: a way to keep the value/wealth we've generated. Putting dollars in your bank account, or buying stocks/cryptos are a good example of storing your value. Apples would make for a poor storage of value since they would rot over time and lose their value.
 
-2. Unit of Account: is a way to measure of valuable something is. When you go shopping, you see prices being listed in terms of dollars. This is an exmaple of the dollar being used as an unit of account. Pricing something in bitcoin would be a poor unit of account since the prices would change all the time.
+2. `Unit of Account`: is a way to measure of valuable something is. When you go shopping, you see prices being listed in terms of dollars. This is an exmaple of the dollar being used as an unit of account. Pricing something in bitcoin would be a poor unit of account since the prices would change all the time.
 
-3. Medium of Exchange: is an agreed upon method to transact with eachother. Buying groceries with dollars is a good example of using dollars as a medium of exchange. Buying groceries with car tires would make for a poor medium of exchange, since car tires are hard to transact with.
+3. `Medium of Exchange`: is an agreed upon method to transact with eachother. Buying groceries with dollars is a good example of using dollars as a medium of exchange. Buying groceries with car tires would make for a poor medium of exchange, since car tires are hard to transact with.
 
 In order for our everyday lives to be efficient, we need our money to do these three things (above).
 
@@ -3984,7 +4018,8 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
 
 #### Different Categories/Properties of StableCoins
 
-1. Relative Stability - Pegged/Anchored or Floating
+
+1. `Relative Stability` - `Pegged/Anchored` or `Floating`
     - When we talk about stability, something is stable only to something else.
     - The most popular type of Stablecoins are pegged/anchored stablecoins. These are stablecoins that are pegged or anchored to another asset like the US dollar.
         - Thether, DAI, and USDC are all examples of US dollar pegged StableCoins. These coins follow the natative of 1 coin = 1 dollar. It's stable because they track the price of another asset that we think is stable. Most of these stablecoins have sometype of mechanism to make these stablecoins almost interchangeable with their pegged asset.
@@ -3995,7 +4030,7 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
             - For example, the US dollar experiences inflation every year, whereas a floating stablecoin could experience no inflation, ever.
 
 
-2. Stability Method - Governed or Algorithmic
+2. `Stability Method` - `Governed` or `Algorithmic`
     - Stability Method is the way that keeps the coin stable. If it is a pegged stablecoin, what is the pegging mechanism? If it is a floating stablecoin, what is the floating mechanism? Typically, the mechanism revolves around minting or buring the stablecoin in very specific ways, and typically refers to who or what is doing the minting and burning. These are on a spectrum of Governed to Algorithmic.
         - In a governed stablecoin, there is a governed body or a centralized body that is minting or burning the stablecoin. A maximally governed and least algorithmic stablecoin, there is a single person/entity/organization/government/DAO minting or burning new stablecoins.
             - These Governed coins are typically considered centralized, since there is a singular body that is controlling the minting and burning. You could make them a little more decentralized by introducing a DAO
@@ -4013,16 +4048,16 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
 
    
 
-3. Collateral Type - Endogenous or Exogenous
+3. `Collateral Type` - `Endogenous` or `Exogenous`
 
     Collateral here means the assets backing our stable coins and giving it value.
         - For example, USDC has the dollar as its collateral and its the dollar that gives the USDC token its value. You can hypothetically swap 1 usdc for 1 dollar
         - Dai is collateralized by many assets. For example, you can deposit eth and get minted DAI in return.
 
 
-    Exogenous collateral is collateral that originates from outside the protocol.
+    `Exogenous` collateral is collateral that originates from outside the protocol.
 
-    Endogenous collateral originates from inside the protocol.
+    `Endogenous` collateral originates from inside the protocol.
 
     One of the easier ways to define what type of collateral a token is using is to ask this question:
         If the stablecoin fails, does the underlying collateral also fail?
@@ -4030,6 +4065,27 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
             - If no, then its Exogenous.
 
 
+        Let's test this:
+        If USDC fails, does the underlying collateral(US dollar) fail? 
+            - No! The US dollar would not fail if USDC fails. Therefore, USDC is exogenous.
+
+        If DAI fails, does the underlying collateral(eth & other cryptos) fail?
+            - No! The other cryptos would not fail if DAI fails. Therefore, DAI is exogenous.
+
+        If UST fails, does the underlying collateral(LUNA) fail?
+            - Yes! LUNA would fail! Therefore, UST is/was endogenous.
+
+    Other questions to ask to define what type of collateral a token is using are to ask these questions:
+        - Was the collateral created with the sole purpose of being collateral?
+            - If yes, then its endogenous.
+            - If no, then its exogenous.
+        and/or
+        - Does the protocol own the issuance of the underlying collateral?
+            - If yes, then its endogenous.
+            - If no, then its Exogenous.
+
+
+    Endogenous Collateral stablecoins are typically backed by nothing since they own their own underlying collateral. This is why UST/LUNA failed. 
 
 
 
@@ -4040,6 +4096,10 @@ In a decentralized world, we need a decentralized money. Assets like Ethereum wo
      ![alt text](image.png)
 
      Most Fiat collateralized stablecoin almost all fall into the governed/dumb section (lol) since they are dealing with fiat currency and you need a centralized entity to onboard that fiat to the blockchain.
+
+
+You can learn more at ` https://updraft.cyfrin.io/courses/advanced-foundry/develop-defi-protocol/defi-stablecoins `
+
 
 
 
