@@ -100,6 +100,9 @@ NFT Notes
 EIP Notes
     - EIP status terms
 
+DeFi Notes
+    - StableCoin Notes
+
 Keyboard Shortcuts
 
 
@@ -2208,7 +2211,7 @@ when deploying or interacting with contracts, if you get an error of `-ffi` then
 the `dry-run` folder is where the transactions with no blockchain specified go.
 
 `run-latest.json` is the latest transaction sent. the transaction data will look like: 
-# I am adding comments to explain what is going on here:
+
 ```javascript
   "transactions": [
     {
@@ -2234,7 +2237,7 @@ the `dry-run` folder is where the transactions with no blockchain specified go.
 ```
   When you send a transaction, you are signing it and sending it.
 
-  # cast is a very helpful tool. run `cast --help` to see all the helpful things it can do. 
+  cast is a very helpful tool. run `cast --help` to see all the helpful things it can do. 
 
   Watch the video about this @ https://updraft.cyfrin.io/courses/foundry/foundry-simple-storage/what-is-a-transaction . if that does not work, then it is the foundry fundamentals course, section 1, lesson 18: "What is a transaction"
 
@@ -3926,7 +3929,8 @@ In this example, we are using the cheatcode `vm.readFile` that foundry has to re
 fs_permissions = [{ access = "read", path = "./img/" /* img should be replaced with the folder that you want to readFiles from. In this example i want to use readFile on my `img` folder */ }]
 ```
 
-Then in this example, after we read/save the SVG files, we write the function `svgToImageURI` that adds the baseURL (so our browser can decode the base64 encoded text) to the encoded text after it encodes it. then it passes these BaseURL+encoded-strings to the constructor of the main NFT contract.
+Then in this example, after we read/save the SVG files, we write the function `svgToImageURI` that adds the baseURL (so our browser can decode the base64 encoded text) to the encoded text after it encodes it. then it passes these BaseURL+encoded-strings to the constructor of the main NFT contract. 
+
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
 ## EIP Notes 
@@ -3955,10 +3959,87 @@ EIPs are a way for the community to suggest improvements to industry standards.
 8. Living - A special status for EIPs that are designed to be continually updated and not reach a state of finality. This includes most notably EIP-1.
 
 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+## DeFi Notes
+
+### StableCoin Notes
+
+A stablecoin is a non-volatile crypto asset. 
+
+A stablecoin is a crypto asset whose buying power fluctuates very little relative to the rest of the market/stablecoins stay relatively stable. A stablecoin is a crypto asset whose buying power stays relatively the same.
+
+#### Why do we care about stablecoins?
+
+In every type of society, we need some type of low volatility/stable currency to fulfull the 3 functions of money:
+1. Storage of Value: a way to keep the value/wealth we've generated. Putting dollars in your bank account, or buying stocks/cryptos are a good example of storing your value. Apples would make for a poor storage of value since they would rot over time and lose their value.
+
+2. Unit of Account: is a way to measure of valuable something is. When you go shopping, you see prices being listed in terms of dollars. This is an exmaple of the dollar being used as an unit of account. Pricing something in bitcoin would be a poor unit of account since the prices would change all the time.
+
+3. Medium of Exchange: is an agreed upon method to transact with eachother. Buying groceries with dollars is a good example of using dollars as a medium of exchange. Buying groceries with car tires would make for a poor medium of exchange, since car tires are hard to transact with.
+
+In order for our everyday lives to be efficient, we need our money to do these three things (above).
+
+In a decentralized world, we need a decentralized money. Assets like Ethereum work great as a storage of value and medium of exchange, but fall behind a little bit due to their unit of account bue to their buying power volatility. (Perhaps in the future ethereum will become stable and we won't even need stablecoins lol).
+
+#### Different Categories/Properties of StableCoins
+
+1. Relative Stability - Pegged/Anchored or Floating
+    - When we talk about stability, something is stable only to something else.
+    - The most popular type of Stablecoins are pegged/anchored stablecoins. These are stablecoins that are pegged or anchored to another asset like the US dollar.
+        - Thether, DAI, and USDC are all examples of US dollar pegged StableCoins. These coins follow the natative of 1 coin = 1 dollar. It's stable because they track the price of another asset that we think is stable. Most of these stablecoins have sometype of mechanism to make these stablecoins almost interchangeable with their pegged asset.
+            - For example, USDC says that for every USDC token printed/minted there is a dollar or a bunch of assets that equal a dollar in a bank account somewhere. The way this works is that at any time you should be able to swap your USDC for the dollar.
+            - DAI uses a permissionless over-collateralization to maintain its peg.
+    - A stablecoin does not have to be pegged to another asset, it can be "floating". To be considered a stablecoin, its' buying power needs to stay relatively the same over time. So a floating stablecoin is "floating" because its buying power stays the same and it is not tied down to any other asset.
+        - With this mechanism, you could hypothetically have a stablecoin that is even more stable than a pegged/anchored stablecoin.
+            - For example, the US dollar experiences inflation every year, whereas a floating stablecoin could experience no inflation, ever.
+
+
+2. Stability Method - Governed or Algorithmic
+    - Stability Method is the way that keeps the coin stable. If it is a pegged stablecoin, what is the pegging mechanism? If it is a floating stablecoin, what is the floating mechanism? Typically, the mechanism revolves around minting or buring the stablecoin in very specific ways, and typically refers to who or what is doing the minting and burning. These are on a spectrum of Governed to Algorithmic.
+        - In a governed stablecoin, there is a governed body or a centralized body that is minting or burning the stablecoin. A maximally governed and least algorithmic stablecoin, there is a single person/entity/organization/government/DAO minting or burning new stablecoins.
+            - These Governed coins are typically considered centralized, since there is a singular body that is controlling the minting and burning. You could make them a little more decentralized by introducing a DAO
+            - USDC, Thether, and TUSD are examples of governed stablecoins.
+        
+        - Algorithmic Stablecoins whose stablity is by a permissionless algorithim with no human intervention. An Algorithmic Stablecoin is just when a set of autonomous code or algorthim dictates the minting and burning. There are 0 humans involved.
+            - A coin like DAI is much more algorthmic than governed because it uses a permission algorthim to mint and burn tokens.
+            - Examples of Algorthimic stablecoins are DAI, Frax, Rai and the disaster UST.
+
+        - A token can have alorithimic and governed properties. There is a spectrum of Most governed to most algorithmic.
+            - DAI does have a autonomous set of code that dictates the minting and burning of tokens, but it does also have a DAO where they can vote on and different things like different interest rates, what can be collateral types, and more.
+                - Technically, DAI is a hybrid system because it has a governance mechanism and some algorithimic mechanisms.
+            - USDC would fall purely in the governed category because it is controlled by a centralized body.
+            UST and LUNA would fall almost purely in algorithimic.
+
+   
+
+3. Collateral Type - Endogenous or Exogenous
+
+    Collateral here means the assets backing our stable coins and giving it value.
+        - For example, USDC has the dollar as its collateral and its the dollar that gives the USDC token its value. You can hypothetically swap 1 usdc for 1 dollar
+        - Dai is collateralized by many assets. For example, you can deposit eth and get minted DAI in return.
+
+
+    Exogenous collateral is collateral that originates from outside the protocol.
+
+    Endogenous collateral originates from inside the protocol.
+
+    One of the easier ways to define what type of collateral a token is using is to ask this question:
+        If the stablecoin fails, does the underlying collateral also fail?
+            - If yes, then its endogenous.
+            - If no, then its Exogenous.
 
 
 
 
+
+
+
+ Here is an example of a chart comparing collateral type vs stability mechanism.
+ Governed vs Algorithmic on the y axis, and Exogenous(anchored) vs Endogenous(reflexive) on the x axis: 
+     ![alt text](image.png)
+
+     Most Fiat collateralized stablecoin almost all fall into the governed/dumb section (lol) since they are dealing with fiat currency and you need a centralized entity to onboard that fiat to the blockchain.
 
 
 
