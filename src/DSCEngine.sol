@@ -30,16 +30,37 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__NotAllowedToken();
     error DSCEngine__TransferFailed();
+    error DSC__BreaksHealthFactor(uint256);
+    error DSCEngine__MintFailed();
 
     // State Variables //
 
+    // Chainlink price feeds return prices with 8 decimal places
+    // To maintain precision when working with USD values, we add 10 more decimal places
     uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+
+    // we use this to divide by 1e18 to get a precise number
+    // Example: If we multiply:
+    // (2000 * 1e8) * 1e10 * (1 ETH * 1e18) = huge number with too many decimals
+    // So we divide by 1e18 (PRECISION) to get back to the correct decimal places
+    // Most ERC20s use 18 decimal places, so this helps us standardize our math
     uint256 private constant PRECISION = 1e18;
+
+    uint256 private constant LIQUIDATION_THRESHOLD = 50;
+
+    uint256 private constant LIQUIDATION_PRECISION = 100;
+
+    // Minimum health factor before user can be liquidated
+    // If a user goes below 1, then they can get liquidated
+    uint256 private constant MIN_HEALTH_FACTOR = 1;
 
     // maps token address to pricefeed addresses
     mapping(address token => address priceFeed) private s_priceFeeds;
 
-    // mapping the usersBalance to a mapping of tokens that maps to the amount of each token that they have.
+    // Tracks how much collateral each user has deposited
+    // First key: user's address
+    // Second key: token address they deposited
+    // Value: amount of that token they have deposited
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
 
     // mapping the user to the amount of DSC they have minted
@@ -62,6 +83,8 @@ contract DSCEngine is ReentrancyGuard {
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
 
     //    Modifiers    //
+
+    // modifier to make sure that the amount being passes as the input is more than 0 or the function being called will revert.
     modifier moreThanZero(uint256 amount) {
         if (amount == 0) {
             revert DSCEngine__NeedsMoreThanZero();
@@ -69,6 +92,10 @@ contract DSCEngine is ReentrancyGuard {
         _;
     }
 
+    // Modifier that checks if a token is in our list of allowed collateral tokens
+    // If a token has no price feed address (equals address(0)) in our s_priceFeeds mapping,
+    // it means it's not an allowed token and the transaction will revert
+    // The underscore (_) means "continue with the function code if check passes"
     modifier isAllowedToken(address token) {
         if (s_priceFeeds[token] == address(0)) {
             revert DSCEngine__NotAllowedToken();
@@ -149,6 +176,10 @@ contract DSCEngine is ReentrancyGuard {
         s_DSCMinted[msg.sender] += amountDscToMint;
 
         _revertIfHealthFactorIsBroken(msg.sender);
+        bool minted = i_dsc.mint(msg.sender, amountDscToMint);
+        if (!minted) {
+            revert DSCEngine__MintFailed();
+        }
     }
 
     function burnDsc() external {}
@@ -166,19 +197,44 @@ contract DSCEngine is ReentrancyGuard {
         view
         returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
     {
+        // gets the amount a user has minted and saves it as a variable named totalDscMinted
         totalDscMinted = s_DSCMinted[user];
+        // gets the total amount of collateral the user has deposited and saves it has a variable named collateralValueInUsd
         collateralValueInUsd = getAccountCollateralValue(user);
+        // returns the users minted DSC amount and the users collateral amount
+        return (totalDscMinted, collateralValueInUsd);
     }
 
     /*
      * Returns how close to liquidation a user is
      * If a user goes below 1, then they can get liquidated
      */
-    function healthFactor(address user) internal view {
+    function _healthFactor(address user) internal view returns (uint256) {
+        // Get user's DSC minted amount and total collateral value in USD from _getAccountInformation
         (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+        // multiplies the users collateral by 50, then takes the product and divides it by 100 for precision
+        // example: 1000 * 50 = 50,000
+        // 50,000 / 100 = 500
+        // saves the result as a variable named collateralAdjustedForThreshold
+        uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+        // multiplies the outcome of the equation above by 1e18 and divides the product by how much DSC the user has minted. Returns the result. The result is the healthfactor.
+        return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
+
+        // example:
+        // $1000 ETH / 100 DSC
+        //1000 * 50 = 50,000 / 100 = (500 / 100) > 1
+        // this function returns the user's health factor
     }
 
-    function _revertIfHealthFactorIsBroken(address user) internal view {}
+    // Check
+    function _revertIfHealthFactorIsBroken(address user) internal view {
+        // grabs the user's health factor by calling _healthFactor
+        uint256 userHealthFactor = _healthFactor(user);
+        // if it is less than 1, revert.
+        if (userHealthFactor < MIN_HEALTH_FACTOR) {
+            revert DSC__BreaksHealthFactor(userHealthFactor);
+        }
+    }
 
     //    Public & External View Functions    //
 
@@ -192,10 +248,17 @@ contract DSCEngine is ReentrancyGuard {
             // Example: If i = 0, might get WETH address
             // Example: If i = 1, might get WBTC address
             address token = s_collateralTokens[i];
+
+            // Get how much of this specific token the user has deposited as collateral
+            // Example: If user has deposited 5 WETH, amount = 5
+            // Example: If user has deposited 2 WBTC, amount = 2
             uint256 amount = s_collateralDeposited[user][token];
+
+            // After getting the token and the amount of tokens the user has, gets the correct amount of collateral the user has deposited and saves it as a variable named totalCollateralValueInUsd
             totalCollateralValueInUsd += getUsdValue(token, amount);
         }
 
+        // return the total amount of collateral in USD
         return totalCollateralValueInUsd;
     }
 
@@ -204,6 +267,10 @@ contract DSCEngine is ReentrancyGuard {
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         // out of all the data that is returned by the pricefeed, we only want to save the price
         (, int256 price,,,) = priceFeed.latestRoundData();
+        // Calculate USD value while handling decimal precision:
+        // 1. Convert price to uint256 and multiply by ADDITIONAL_FEED_PRECISION to match token decimals
+        // 2. Multiply by the token amount
+        // 3. Divide by PRECISION to get the final USD value with correct decimal places
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
     }
 }
