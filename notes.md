@@ -83,6 +83,11 @@ ChainLink Notes
     - Chainlink VRF 2.5 Notes
     - Chainlink Automation (Custom Logic) Notes
 
+OpenZeppelin Notes
+    - OpenZeppelin ERC20 Notes
+    - OpenZeppelin NFT Notes
+    - OpenZeppelin Mocks Notes
+
 Makefile Notes
 
 Everything ZK-SYNC Notes
@@ -319,8 +324,9 @@ Example:
 ```javascript
 contract Example {
     uint private secretNumber; // Only this contract can access
-    
-    function privateFunction() private {
+
+    // internal & private functions start with a `_` to let us developers know that they are internal functions
+    function _privateFunction() private {
         // Only callable from within this contract
     }
 }
@@ -335,14 +341,15 @@ Example:
 contract Base {
     uint internal sharedNumber; // Accessible by inheriting contracts
     
-    function internalFunction() internal {
+    // internal & private functions start with a `_` to let us developers know that they are internal functions
+    function _internalFunction() internal {
         // Callable from this contract and inherited contracts
     }
 }
 
 contract Example is Base {
     function useInternal() public {
-        internalFunction(); // Can access internal members
+        _internalFunction(); // Can access internal members
         sharedNumber = 5;   // Can access internal variables
     }
 }
@@ -2601,6 +2608,8 @@ To use the interface of the AggregatorV3Interface, run `forge install smartcontr
 
 If you need the interface of the AggregatorV3Interface from github for any reason, you can go to `https://github.com/smartcontractkit/chainlink/blob/develop/contracts/src/v0.8/shared/interfaces/AggregatorV3Interface.sol` - (this link may change, if so, the AggregatorV3Interface will still be in the smartcontractkit/chainlink github, but under a different file. If you cannot find it, then you can find the correct link in `https://github.com/Cyfrin/foundry-full-course-cu?tab=readme-ov-file#solidity-101-section-1-simple-storage` in Solidity 101 Section 3: Remix Fund Me, under `Interfaces`. The link should say something like `For reference - ChainLink Interface's Repo` and the link will be here.)
 
+To find out how many decimals a token pricefeed has, you can go to the pricefeed addresses of the chainlink docs and click `show more details` and it will have a tab named `Dec`, which stands for decimals.
+
 
 Once you import the AggregatorV3Interface, you can pass the pricefeed address into the AggregatorV3Interface and it will return any data that you want from the AggregatorV3Interface interface. 
 
@@ -3520,6 +3529,273 @@ In this example, `checkUpkeep` checking to see if all the conditionals return tr
 3. Finally, after we deploy the contract onto a testnet or mainnet, we need to register the new Upkeep with chainlink. To do this, go to automation.chain.link and register a new Upkeep. Connect your wallet that deployed the contract, and register the new upkeep. Click "Custom Logic" since that is what we are most likely using, then click next and it will prompt you for your contracts address. Input the contract address of the contract that was just deployed tat uses the Chainlink Automation. Then click next and enter the Upkeep details, such as the contract name and starting balance (it will ask for optional items, but you do not need to fill these out.). Then just click `Register Upkeep` and confirm the transaction in your metamask.
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+## OpenZeppelin Notes
+
+OpenZeppelin has many contracts, parent contracts, mocks and more that can help us in development. 
+
+To use OpenZeppelin, install their package with `forge install OpenZepplin/openzepplin-contracts --no-commit`. 
+
+then create a remapping in your `foundry.toml` of `remappings = ['@openzeppelin=lib/openzeppelin-contracts']` .
+
+
+
+
+### OpenZeppelin ERC20 Notes
+
+OpenZeppelin has ERC contracts that are ready to deploy and have been audited. You can find more about these in their docs. `https://docs.openzeppelin.com/contracts/5.x/tokens`.
+
+OpenZeppelin also has a `wizard` that allows you to build a pre-selection of different tokens depending on what you want them to do: `https://docs.openzeppelin.com/contracts/5.x/wizard`
+
+
+To use OpenZepplin Contracts in your codebase do the following:
+ 1. run `forge install OpenZepplin/openzepplin-contracts --no-commit`. 
+ 
+ 2. then create remapping in your `foundry.toml` of `remappings = ['@openzeppelin=lib/openzeppelin-contracts']` .
+
+ 3. Then import the ERC you want to use and inherit the imported file.
+
+ 4. Implement the constructor used in the inherited file.
+
+ example from foundry-erc20-f23:
+ ```js
+// SPDX-License-Identifier: MIT
+
+pragma solidity 0.8.19;
+
+import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
+
+contract OurToken is ERC20 {
+    // since the ERC20 contract we inherited from has a constructor, we must implement the constructor.
+    constructor(uint256 initalSupply) ERC20("OurToken", "OT") {
+        // mint the msg.sender of this contract the entire initial Supply
+        _mint(msg.sender, initalSupply);
+    }
+}
+```
+
+
+### OpenZeppelin NFT Notes
+
+To learn more about NFT building and how to work with OpenZeppelin's NFT contracts, view the ` Creating NFTs ` section.
+
+### OpenZeppelin Mocks Notes
+
+OpenZeppelin has many mocks that can help developers with testing.
+
+Some examples are:
+    - ERC20 Mock
+    - ERC1271 Wallet Mock
+    - ERC2771 Context Mock
+    - ERC3156 Flash Borrower Mock
+    - ERC4626 Mock
+
+and many more.
+
+An example of using a mock is below:
+```js
+
+// SPDX-License-Identifier: MIT
+
+pragma solidity 0.8.19;
+
+import {Script} from "forge-std/Script.sol";
+import {MockV3Aggregator} from "test/Mocks/MockV3Aggregator.sol";
+// import the ERC20 Mock from openzeppelin
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
+
+contract HelperConfig is Script {
+    struct NetworkConfig {
+        address wethUsdPriceFeed;
+        address wbtcUsdPriceFeed;
+        address weth;
+        address wbtc;
+        uint256 deployerKey;
+    }
+
+    uint8 public constant DECIMALS = 8;
+    int256 public constant ETH_USD_PRICE = 2000e8;
+    int256 public constant BTC_USD_PRICE = 1000e8;
+    uint256 public constant INITIAL_BALANCE = 1000e8;
+    uint256 public constant DEFAULT_ANVIL_KEY = 0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80;
+
+    NetworkConfig public activeNetworkConfig;
+
+    constructor() {
+        if (block.chainid == 11155111) {
+            activeNetworkConfig = getSepoliaEthConfig();
+        } else {
+            activeNetworkConfig = getOrCreateAnvilEthConfig();
+        }
+    }
+
+    function getSepoliaEthConfig() public view returns (NetworkConfig memory sepoliaNetworkConfig) {
+        sepoliaNetworkConfig = NetworkConfig({
+            wethUsdPriceFeed: 0x694AA1769357215DE4FAC081bf1f309aDC325306, // ETH / USD
+            wbtcUsdPriceFeed: 0x1b44F3514812d835EB1BDB0acB33d3fA3351Ee43,
+            weth: 0xdd13E55209Fd76AfE204dBda4007C227904f0a81,
+            wbtc: 0x8f3Cf7ad23Cd3CaDbD9735AFf958023239c6A063,
+            deployerKey: vm.envUint("PRIVATE_KEY")
+        });
+    }
+
+    function getOrCreateAnvilEthConfig() public returns (NetworkConfig memory) {
+        if (activeNetworkConfig.wethUsdPriceFeed != address(0)) {
+            return activeNetworkConfig;
+        }
+
+        vm.startBroadcast();
+        MockV3Aggregator ethUsdPriceFeed = new MockV3Aggregator(DECIMALS, ETH_USD_PRICE);
+        // create new ERC20Mock with the constructor params that it takes. So here we are mocking the WETH token
+        ERC20Mock wethMock = new ERC20Mock("WETH", "WETH", msg.sender, INITIAL_BALANCE);
+
+
+        MockV3Aggregator btcUsdPriceFeed = new MockV3Aggregator(DECIMALS, BTC_USD_PRICE);
+        // create new ERC20Mock with the constructor params that it takes. So here we are mocking the WBTC token
+        ERC20Mock wbtcMock = new ERC20Mock("WBTC", "WBTC", msg.sender, INITIAL_BALANCE);
+        vm.stopBroadcast();
+
+        return NetworkConfig({
+            wethUsdPriceFeed: address(ethUsdPriceFeed),
+            wbtcUsdPriceFeed: address(btcUsdPriceFeed),
+            weth: address(wethMock),
+            wbtc: address(wbtcMock),
+            deployerKey: DEFAULT_ANVIL_KEY
+        });
+    }
+}
+
+```
+
+
+### OpenZeppelin Ownable Notes
+
+The Ownable contract by OpenZeppelin is a fundamental access control mechanism that provides a way to restrict certain functions to only be callable by an "owner" address. Here's a breakdown:
+
+
+
+Core Functionality
+1. Ownership Model:
+```js
+address private _owner;
+event OwnershipTransferred(address indexed previousOwner, address indexed newOwner);
+```
+- Maintains a single owner address
+- Emits an event whenever ownership changes
+
+2. Constructor:
+```js
+constructor() {
+    _transferOwnership(_msgSender());
+}
+```
+- Sets the deployer (msg.sender) as the initial owner of the contract
+
+3. Key Modifier:
+```js
+modifier onlyOwner() {
+    _checkOwner();
+    _;
+}
+```
+- Used to restrict function access to only the owner
+- Can be added to any function that should be owner-only
+
+
+Main Functions
+
+1. Owner Management:
+```js
+function owner() public view virtual returns (address)
+function _checkOwner() internal view virtual
+```
+- owner(): Returns current owner's address
+- _checkOwner(): Internal validation that caller is owner
+
+2. Ownership Transfer:
+```js
+function transferOwnership(address newOwner) public virtual onlyOwner
+function _transferOwnership(address newOwner) internal virtual
+```
+- Allows owner to transfer ownership to new address
+- Includes safety check against zero address
+
+3. Ownership Renouncement:
+```js
+function renounceOwnership() public virtual onlyOwner
+```
+- Allows owner to permanently give up ownership
+- Sets owner to address(0)
+- Makes owner-only functions permanently inaccessible
+
+Common Use Cases:
+Restricting administrative functions
+Managing upgradeable contracts
+Controlling privileged operations
+Setting protocol parameters
+Emergency functions (like pause/unpause)
+To use Ownable in your contract, you would inherit from it like:
+```js
+contract MyContract is Ownable {
+    function privilegedFunction() public onlyOwner {
+        // Only the owner can call this
+    }
+}
+```
+
+
+Below is an example of transfering ownership of a contract(DecentralizedStableCoin.sol) to my DSCEngine.sol contract so that only the DSCEngine is the only contract that can use the mint and burn functions in my DecentralizedStableCoin.sol. Example is from foundry-defi-stablecoin-f23
+
+We transfer the ownership in my Deployment script where i deploy both the DSCEngine.sol and the DecentralizedStableCoin.sol
+```js
+// SPDX-License-Identifier: MIT
+
+pragma solidity 0.8.19;
+
+import {Script} from "forge-std/Script.sol";
+import {DecentralizedStableCoin} from "src/DecentralizedStableCoin.sol";
+import {DSCEngine} from "src/DSCEngine.sol";
+import {HelperConfig} from "./HelperConfig.s.sol";
+
+contract DeployDSC is Script {
+    address[] public tokenAddresses;
+    address[] public priceFeedAddresses;
+
+    function run() external returns (DecentralizedStableCoin, DSCEngine) {
+        HelperConfig config = new HelperConfig();
+
+        (address wethUsdPriceFeed, address wbtcUsdPriceFeed, address weth, address wbtc, uint256 deployerKey) =
+            config.activeNetworkConfig();
+
+        tokenAddresses = [weth, wbtc];
+        priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed];
+
+        vm.startBroadcast();
+        DecentralizedStableCoin dsc = new DecentralizedStableCoin();
+        DSCEngine engine = new DSCEngine(tokenAddresses, priceFeedAddresses, address(dsc));
+
+        // Transferring ownership of the DSC contract to the DSCEngine contract
+        // Making the DSCEngine the only contract that can mint and burn DSC tokens (because these functions are marked with onlyOwner modifier)
+
+        dsc.transferOwnership(address(engine));
+        vm.stopBroadcast();
+        return (dsc, engine);
+    }
+}
+
+```
+
+This is important because:
+- It ensures that only the DSCEngine can mint/burn DSC tokens
+- Users can't directly mint or burn tokens by interacting with the DSC contract
+- All minting/burning must go through the DSCEngine's logic, which enforces:
+- Proper collateralization ratios
+- Health factor checks
+- Other safety mechanisms
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
 
 ## Makefile Notes
 
