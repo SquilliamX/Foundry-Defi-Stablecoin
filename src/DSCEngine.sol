@@ -3,6 +3,7 @@
 import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
 
 pragma solidity 0.8.19;
 
@@ -32,11 +33,20 @@ contract DSCEngine is ReentrancyGuard {
 
     // State Variables //
 
+    uint256 private constant ADDITIONAL_FEED_PRECISION = 1e10;
+    uint256 private constant PRECISION = 1e18;
+
     // maps token address to pricefeed addresses
     mapping(address token => address priceFeed) private s_priceFeeds;
 
     // mapping the usersBalance to a mapping of tokens that maps to the amount of each token that they have.
     mapping(address user => mapping(address token => uint256 amount)) private s_collateralDeposited;
+
+    // mapping the user to the amount of DSC they have minted
+    mapping(address user => uint256 amountDscMinted) private s_DSCMinted;
+
+    // an array of all the collateral tokens users can use.
+    address[] private s_collateralTokens;
 
     // We can't just call DecentralizedStableCoin.mint directly because DecentralizedStableCoin is a contract type, not a deployed contract
     // We need to know the specific address where the contract is deployed to interact with it
@@ -76,6 +86,8 @@ contract DSCEngine is ReentrancyGuard {
             // and we set each tokenAddress equal to their respective priceFeedAddresses in the mapping.
             // we declare this in the constructor and define the variables in the deployment script
             s_priceFeeds[tokenAddresses[i]] = priceFeedAddresses[i];
+            // push all the tokens into our tokens array/list
+            s_collateralTokens.push(tokenAddresses[i]);
         }
         // Initialize our DSC instance by casting the provided address to a DecentralizedStableCoin type
         // This allows us to interact with the DSC contract's functions from within this contract
@@ -125,11 +137,73 @@ contract DSCEngine is ReentrancyGuard {
 
     function redeemCollateral() external {}
 
-    function mintDsc() external {}
+    /*
+    * @notice: follows CEI
+    * @param amountDscToMint: The amount of Decentralized StableCoin to mint
+    * @notice: msg.sender must have more collateral value than the minimum threshold
+    */
+    function mintDsc(uint256 amountDscToMint) external moreThanZero(amountDscToMint) nonReentrant {
+        // update the internal mapping to track how much the msg.sender has minted
+        // s_DSCMinted[msg.sender] = s_DSCMinted[msg.sender] + amountDscToMint;
+        //above is the old way. below is the shortcut with += . This += means we are adding the new value to the existing value that already exists.
+        s_DSCMinted[msg.sender] += amountDscToMint;
+
+        _revertIfHealthFactorIsBroken(msg.sender);
+    }
 
     function burnDsc() external {}
 
     function liquidate() external {}
 
     function getHealthFactor() external view {}
+
+    //    Private & Internal View Functions    //
+
+    /* internal & private functions start with a `_` to let us developers know that they are internal functions */
+
+    function _getAccountInformation(address user)
+        private
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        totalDscMinted = s_DSCMinted[user];
+        collateralValueInUsd = getAccountCollateralValue(user);
+    }
+
+    /*
+     * Returns how close to liquidation a user is
+     * If a user goes below 1, then they can get liquidated
+     */
+    function healthFactor(address user) internal view {
+        (uint256 totalDscMinted, uint256 collateralValueInUsd) = _getAccountInformation(user);
+    }
+
+    function _revertIfHealthFactorIsBroken(address user) internal view {}
+
+    //    Public & External View Functions    //
+
+    function getAccountCollateralValue(address user) public view returns (uint256 totalCollateralValueInUsd) {
+        // Loop through each token in our list of accepted collateral tokens
+        // i = 0: Start with the first token in the array
+        // i < length: Continue until we've checked every token
+        // i++: Move to next token after each iteration
+        for (uint256 i = 0; i < s_collateralTokens.length; i++) {
+            // Get the token address at the current index (i) from our array of collateral tokens
+            // Example: If i = 0, might get WETH address
+            // Example: If i = 1, might get WBTC address
+            address token = s_collateralTokens[i];
+            uint256 amount = s_collateralDeposited[user][token];
+            totalCollateralValueInUsd += getUsdValue(token, amount);
+        }
+
+        return totalCollateralValueInUsd;
+    }
+
+    function getUsdValue(address token, uint256 amount) public view returns (uint256) {
+        // gets the priceFeed of the token inputted by the user and saves it as a variable named priceFeed of type AggregatorV3Interface
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        // out of all the data that is returned by the pricefeed, we only want to save the price
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
 }
