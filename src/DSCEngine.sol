@@ -25,7 +25,9 @@ pragma solidity 0.8.19;
  * @notice This contract is VERY loosely based on the MakerDAO DSS (DAI) system
  */
 contract DSCEngine is ReentrancyGuard {
-    //      Errors      //
+    ///////////////////////////////
+    //           Errors          //
+    ///////////////////////////////
     error DSCEngine__NeedsMoreThanZero();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
     error DSCEngine__NotAllowedToken();
@@ -35,7 +37,9 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorOk();
     error DSCEngine__HealthFactorNotImproved();
 
-    // State Variables //
+    ///////////////////////////////
+    //      State Variables      //
+    ///////////////////////////////
 
     // Chainlink price feeds return prices with 8 decimal places
     // To maintain precision when working with USD values, we add 10 more decimal places
@@ -78,7 +82,10 @@ contract DSCEngine is ReentrancyGuard {
     // we set the address in the constructor of this contract
     DecentralizedStableCoin private immutable i_dsc;
 
-    //       Events      //
+    ///////////////////////////////
+    //           Events          //
+    ///////////////////////////////
+
     // Event emitted when collateral is deposited, used for:
     // 1. Off-chain tracking of deposits
     // 2. DApp frontend updates
@@ -87,7 +94,9 @@ contract DSCEngine is ReentrancyGuard {
     event CollateralDeposited(address indexed user, address indexed token, uint256 indexed amount);
     event CollateralRedeemed(address indexed redeemedFrom, address redeemTo, address indexed token, uint256 amount);
 
-    //    Modifiers    //
+    ///////////////////////////////
+    //         Modifiers         //
+    ///////////////////////////////
 
     // modifier to make sure that the amount being passes as the input is more than 0 or the function being called will revert.
     modifier moreThanZero(uint256 amount) {
@@ -108,7 +117,9 @@ contract DSCEngine is ReentrancyGuard {
         _;
     }
 
-    //    Functions   //
+    ///////////////////////////////
+    //         Functions         //
+    ///////////////////////////////
     constructor(address[] memory tokenAddresses, address[] memory priceFeedAddresses, address dscAddress) {
         if (tokenAddresses.length != priceFeedAddresses.length) {
             revert DSCEngine__TokenAddressesAndPriceFeedAddressesMustBeSameLength();
@@ -127,7 +138,9 @@ contract DSCEngine is ReentrancyGuard {
         i_dsc = DecentralizedStableCoin(dscAddress);
     }
 
-    // External Functions //
+    ///////////////////////////////
+    //    External Functions    //
+    ///////////////////////////////
 
     /*
      * @param tokenCollateralAddress: The address of the token to deposit as collateral
@@ -335,7 +348,9 @@ contract DSCEngine is ReentrancyGuard {
 
     function getHealthFactor() external view {}
 
+    /////////////////////////////////////////////
     //    Private & Internal View Functions    //
+    /////////////////////////////////////////////
 
     /* internal & private functions start with a `_` to let us developers know that they are internal functions */
 
@@ -418,7 +433,6 @@ contract DSCEngine is ReentrancyGuard {
         // this function returns the user's health factor
     }
 
-    // Check
     function _revertIfHealthFactorIsBroken(address user) internal view {
         // grabs the user's health factor by calling _healthFactor
         uint256 userHealthFactor = _healthFactor(user);
@@ -441,7 +455,7 @@ contract DSCEngine is ReentrancyGuard {
         // 1. Multiply usdAmount by PRECISION (1e18) for precision
         // 2. Divide by price (converted to uint) multiplied by ADDITIONAL_FEED_PRECISION (1e10)
         // Example: If price of ETH = $2000:
-        // - To get 1 ETH worth: (1000 * 1e18) / (2000 * 1e10) = 0.5 ETH
+        // - To get 1 ETH worth: ($1000 * 1e18) / (2000 * 1e10) = 0.5 ETH
         return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
     }
 
@@ -479,5 +493,18 @@ contract DSCEngine is ReentrancyGuard {
         // 2. Multiply by the token amount
         // 3. Divide by PRECISION(1e18(for precision)) to get the final USD value with correct decimal places
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
+    }
+
+    ///////////////////////////////
+    //     Getter Functions      //
+    //////////////////////////////
+
+    function getAccountInformation(address user)
+        external
+        view
+        returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
+    {
+        // returns the totalDscMinted and the collateralValueInUsd from the `_getAccountInformation` function
+        (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
 }

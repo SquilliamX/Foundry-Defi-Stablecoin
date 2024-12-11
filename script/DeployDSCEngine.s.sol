@@ -32,7 +32,7 @@ contract DeployDSC is Script {
         priceFeedAddresses = [wethUsdPriceFeed, wbtcUsdPriceFeed];
 
         // Start broadcasting our transactions
-        vm.startBroadcast();
+        vm.startBroadcast(deployerKey);
 
         // Deploy the DecentralizedStableCoin (DSC) token contract
         DecentralizedStableCoin dsc = new DecentralizedStableCoin();
