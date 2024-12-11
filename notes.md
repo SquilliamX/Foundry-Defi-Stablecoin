@@ -87,6 +87,7 @@ OpenZeppelin Notes
     - OpenZeppelin ERC20 Notes
     - OpenZeppelin NFT Notes
     - OpenZeppelin Mocks Notes
+    - OpenZeppelin Ownable Notes
 
 Makefile Notes
 
@@ -1726,6 +1727,76 @@ Example:
         assert(!upkeepNeeded);
     }
 ```
+
+
+
+
+
+### Foundry Assertion Functions Notes
+
+
+At the end of a test written in foundry, we need to assert the values that we are testing. An assert is a statement that verifies if a condition is true. If the condition is false, the assert will fail and provide an error message. It's a way to validate that your code is working as expected.
+
+Some Assertion Functions are:
+
+```js
+// Compare equality
+assertEq(x, y);          // x == y
+assertEq(x, y, "message"); // x == y with custom error message
+```
+
+AssertEq is my favorite because it is the most used and it will log both the values when you run the test
+
+```js
+assert(x == y) // x == y
+```
+Assert is like AssertEq but it will not log the values, you must console.log them
+
+```js
+// Compare inequality
+assertNotEq(x, y);       // x != y
+```
+
+```js
+// Boolean assertions
+assertTrue(x);           // x is true
+assertFalse(x);          // x is false
+```
+
+```js
+// Compare approximate equality (for floating point)
+assertApproxEqAbs(x, y, delta);  // |x - y| <= delta
+assertApproxEqRel(x, y, percentage); // |x - y| <= |x| * percentage
+```
+
+```js
+// Compare greater/less than
+assertGt(x, y);          // x > y
+assertLt(x, y);          // x < y
+assertGe(x, y);          // x >= y
+assertLe(x, y);          // x <= y
+```
+
+Examples:
+
+assertEq (from foundry-defi-stablecoin-f23):
+```js
+ function testGetUsdPriceValue() public {
+        // 15 eth tokens(each eth token has 18 decimals)
+        uint256 ethAmount = 15e18;
+        // our helperconfig puts the eth price on anvil at 2,000/eth
+        // 15e18 * 2000eth = 30,000e18
+        uint256 expectedUsd = 30000e18;
+        // calls getUsdValue, but getUsdValue needs two paramters, the token and the amount
+        // so we pass the weth token we defined earlier from our helperconfig and we define the ethAmount earlier in this function
+        uint256 actualUsd = dsce.getUsdValue(weth, ethAmount);
+        // Assert the the expectedUsd and the actualUsd are the same
+        assertEq(expectedUsd, actualUsd);
+    }
+```
+
+
+
 
  ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
  ## Chisel Notes
@@ -3974,6 +4045,82 @@ example:
         ourToken.transferFrom(bob, alice, transferAmount);
     }
 ```
+
+If the TransferFrom function is used in a contract, then this means that the sequence must be:
+1. User approves DSCEngine to spend their tokens
+2. User calls depositCollateral
+3. DSCEngine uses transferFrom to move the tokens
+
+This must be how the test is written because this is how the function transferFrom works.
+Example from foundry-defi-stablecoin-f23:
+src/DSCEngine.sol:
+```js
+
+    /*
+    * @notice follows CEI
+    * @dev `@param` means the definitions of the parameters that the function takes.
+    * @param tokenCollateralAddress: the address of the token that users are depositing as collateral
+    * @param amountCollateral: the amount of tokens they are depositing
+    */
+    function depositCollateral(address tokenCollateralAddress, uint256 amountCollateral)
+        external
+        moreThanZero(amountCollateral)
+        isAllowedToken(tokenCollateralAddress)
+        nonReentrant
+    {
+        // we update state here, so when we update state, we must emit an event.
+        // updates the user's balance in our tracking/mapping system by adding their new deposit amount to their existing balance for the specific collateral token they deposited
+        s_collateralDeposited[msg.sender][tokenCollateralAddress] += amountCollateral;
+
+        // emit the event of the state update
+        emit CollateralDeposited(msg.sender, tokenCollateralAddress, amountCollateral);
+
+        // Attempt to transfer tokens from the user to this contract
+        // 1. IERC20(tokenCollateralAddress): Cast the token address to tell Solidity it's an ERC20 token
+        // 2. transferFrom parameters:
+        //    - msg.sender: the user who is depositing collateral
+        //    - address(this): this DSCEngine contract receiving the collateral
+        //    - amountCollateral: how many tokens to transfer
+        // 3. This transferFrom function that we are calling returns a bool: true if transfer succeeded, false if it failed, so we capture the result
+        bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        // This transferFrom will fail if there's no prior approval. The sequence must be:
+        // 1. User approves DSCEngine to spend their tokens
+        // User calls depositCollateral
+        // DSCEngine uses transferFrom to move the tokens
+
+        // if it is not successful, then revert.
+        if (!success) {
+            revert DSCEngine__TransferFailed();
+        }
+    }
+```
+
+Then the test from `transferFrom` is:
+test/integration/DSCEngineTest.t.sol:
+```js
+function testRevertsIfCollateralIs0() public {
+        // Start acting as the USER
+        vm.startPrank(USER);
+
+        // USER approves DSCEngine (dsce) to spend 0 WETH tokens
+        ERC20Mock(weth).approve(address(dsce), 0);
+
+        // Expect the next call to revert with this specific error
+        vm.expectRevert(DSCEngine.DSCEngine__NeedsMoreThanZero.selector);
+
+        // Try to deposit 0 collateral
+        dsce.depositCollateral(weth, 0);
+
+        // Stop acting as the USER
+        vm.stopPrank();
+    }
+```
+If we tried to skip the approval step, the transferFrom would fail because the DSCEngine contract would have no permission to move the user's tokens.
+
+
+
+
+
 
 The `transfer` function will make the `msg.sender`(the caller of the transfer function) to be the `_from` address, and the only parameters it will take are a `_to` address and an `_amount`:
 example:

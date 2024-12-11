@@ -13,7 +13,7 @@ contract DeployDSC is Script {
     address[] public tokenAddresses;
     address[] public priceFeedAddresses;
 
-    function run() external returns (DecentralizedStableCoin, DSCEngine) {
+    function run() external returns (DecentralizedStableCoin, DSCEngine, HelperConfig) {
         // Create new instance of HelperConfig to get network-specific addresses
         // This will either return mock addresses for local testing or real addresses for testnet
         HelperConfig config = new HelperConfig();
@@ -52,6 +52,6 @@ contract DeployDSC is Script {
         vm.stopBroadcast();
 
         // Return both deployed contract instances
-        return (dsc, engine);
+        return (dsc, engine, config);
     }
 }

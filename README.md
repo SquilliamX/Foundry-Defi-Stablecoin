@@ -20,3 +20,12 @@ You can estimate how much gas things cost by running:
 
 forge snapshot
 And you'll see an output file called .gas-snapshot
+
+About this project:
+1. Relative Stability: Anchored/Pegged to USD
+    1. Chainlink Pricefeed
+2. stability machanism (minting): Algorithimic
+    1. people can only mint the stablecoin with enough collateral (coded in)
+3. Collateral type: exogenous (crypto)
+    1. wETH
+    2. wBTC

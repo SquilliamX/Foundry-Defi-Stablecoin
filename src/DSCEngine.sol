@@ -153,6 +153,10 @@ contract DSCEngine is ReentrancyGuard {
         //    - amountCollateral: how many tokens to transfer
         // 3. This transferFrom function that we are calling returns a bool: true if transfer succeeded, false if it failed, so we capture the result
         bool success = IERC20(tokenCollateralAddress).transferFrom(msg.sender, address(this), amountCollateral);
+        // This transferFrom will fail if there's no prior approval. The sequence must be:
+        // 1. User approves DSCEngine to spend their tokens
+        // User calls depositCollateral
+        // DSCEngine uses transferFrom to move the tokens
 
         // if it is not successful, then revert.
         if (!success) {
@@ -268,9 +272,9 @@ contract DSCEngine is ReentrancyGuard {
         // out of all the data that is returned by the pricefeed, we only want to save the price
         (, int256 price,,,) = priceFeed.latestRoundData();
         // Calculate USD value while handling decimal precision:
-        // 1. Convert price to uint256 and multiply by ADDITIONAL_FEED_PRECISION to match token decimals
+        // 1. Convert price to uint256 and multiply by ADDITIONAL_FEED_PRECISION(1e10(add 10 zeros for precision)) to match token decimals
         // 2. Multiply by the token amount
-        // 3. Divide by PRECISION to get the final USD value with correct decimal places
+        // 3. Divide by PRECISION(1e18(for precision)) to get the final USD value with correct decimal places
         return (uint256(price) * ADDITIONAL_FEED_PRECISION * amount) / PRECISION;
     }
 }
