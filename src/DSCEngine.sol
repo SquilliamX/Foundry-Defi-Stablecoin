@@ -32,6 +32,7 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__TransferFailed();
     error DSC__BreaksHealthFactor(uint256);
     error DSCEngine__MintFailed();
+    error DSCEngine__HealthFactorOk();
 
     // State Variables //
 
@@ -52,7 +53,9 @@ contract DSCEngine is ReentrancyGuard {
 
     // Minimum health factor before user can be liquidated
     // If a user goes below 1, then they can get liquidated
-    uint256 private constant MIN_HEALTH_FACTOR = 1;
+    uint256 private constant MIN_HEALTH_FACTOR = 1e18;
+
+    uint256 private constant LIQUIDATION_BONUS = 10;
 
     // maps token address to pricefeed addresses
     mapping(address token => address priceFeed) private s_priceFeeds;
@@ -197,12 +200,25 @@ contract DSCEngine is ReentrancyGuard {
         moreThanZero(amountCollateral)
         nonReentrant
     {
+        // Decrease the user's collateral balance in our internal accounting
+        // This must happen before the transfer to prevent reentrancy attacks
         s_collateralDeposited[msg.sender][tokenCollateralAddress] -= amountCollateral;
+        // the line above is the same as `s_collateralDeposited[msg.sender][tokenCollateralAddress] = s_collateralDeposited[msg.sender][tokenCollateralAddress] - amountCollateral`
+
+        // Emit event for off-chain tracking and transparency since we are updating state
         emit CollateralRedeemed(msg.sender, tokenCollateralAddress, amountCollateral);
+
+        // Transfer the collateral tokens from this contract back to the user
+        // Using ERC20's transfer instead of transferFrom since the tokens are already in this contract
         bool success = IERC20(tokenCollateralAddress).transfer(msg.sender, amountCollateral);
+
+        // If the transfer fails, revert the transaction
         if (!success) {
             revert DSCEngine__TransferFailed();
         }
+
+        // Check if the user's health factor is still okay after redeeming collateral
+        // This ensures they maintain enough collateral for their minted DSC
         _revertIfHealthFactorIsBroken(msg.sender);
     }
 
@@ -225,18 +241,55 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     function burnDsc(uint256 amount) public moreThanZero(amount) {
+        // Decrease the user's DSC minted balance in our internal accounting
+        // This must happen first to prevent reentrancy attacks
         s_DSCMinted[msg.sender] -= amount;
+        // the line above is the same as `s_DSCMinted[msg.sender] = s_DSCMinted[msg.sender] - amount`
+
+        // Transfer DSC tokens from user to this contract
+        // We need to get the tokens before we can burn them
         bool success = i_dsc.transferFrom(msg.sender, address(this), amount);
 
-        // this conditional is hypothetically unreachable since the transferFrom has its own revert, but just in case...
+        // Check if transfer was successful
+        // This is a backup check since transferFrom would normally revert on failure
         if (!success) {
             revert DSCEngine__TransferFailed();
         }
+
+        // Burn the DSC tokens now that we have them
+        // This permanently removes them from circulation
         i_dsc.burn(amount);
-        _revertIfHealthFactorIsBroken(msg.sender); // just a backup, I don't think this would ever hit
+
+        // Verify the user's health factor is still good after burning
+        // This is a backup check that theoretically should never fail
+        // since burning DSC should only improve the health factor
+        _revertIfHealthFactorIsBroken(msg.sender);
     }
 
-    function liquidate() external {}
+    /*
+     * @param collateral: The erc20 collateral address to liquidate from the user
+     * @param user: The user who has broken the health factor. Their _healthFactor should be below          MIN_HEALTH_FACTOR in order to liquidate them
+     * @param debtToCover The amount of DSC you want to burn to improve the users health factor
+     * @notice You can partially liquidate a user
+     * @notice You will get a liquidate bonus for taking the users funds
+     * @notice This function working assumes the protocol will be roughly 200% overcollateralized in order for this to work.
+     * @notice a known bug would be if the protocol were 100% or less collateralized, then we wouldn't be able to incentivize the liquidators.
+     * For example, if the price of the collateral plummeted before anyone could be liquidated.
+     */
+    function liquidate(address collateral, address user, uint256 debtToCover)
+        external
+        moreThanZero(debtToCover)
+        nonReentrant
+    {
+        uint256 startingUserHealthFactor = _healthFactor(user);
+        if (startingUserHealthFactor >= MIN_HEALTH_FACTOR) {
+            revert DSCEngine__HealthFactorOk();
+        }
+
+        uint256 tokenAmountFromDebtCovered = getTokenAmountFromUsd(collateral, debtToCover);
+        uint256 bonusCollateral = (tokenAmountFromDebtCovered * LIQUIDATION_BONUS) / LIQUIDATION_PRECISION;
+        uint256 totalCollateralToRedeem = tokenAmountFromDebtCovered + bonusCollateral;
+    }
 
     function getHealthFactor() external view {}
 
@@ -289,6 +342,11 @@ contract DSCEngine is ReentrancyGuard {
     }
 
     //    Public & External View Functions    //
+    function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
+        AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
+        (, int256 price,,,) = priceFeed.latestRoundData();
+        return (usdAmountInWei * PRECISION) / (uint256(price) * ADDITIONAL_FEED_PRECISION);
+    }
 
     function getAccountCollateralValue(address user) public view returns (uint256 totalCollateralValueInUsd) {
         // Loop through each token in our list of accepted collateral tokens
