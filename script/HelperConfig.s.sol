@@ -4,7 +4,7 @@ pragma solidity 0.8.19;
 
 // Import necessary contracts for mocking and scripting
 import {Script} from "forge-std/Script.sol";
-import {MockV3Aggregator} from "test/Mocks/MockV3Aggregator.sol";
+import {MockV3Aggregator} from "test/mocks/MockV3Aggregator.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
 
 contract HelperConfig is Script {
