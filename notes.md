@@ -46,6 +46,10 @@ Smart Contract Tests Notes
     - Sending money in tests Notes
     - GAS INFO IN TESTS Notes
     - FUZZ TESTING NOTES
+        - Handler Based Fuzz Testing (Advanced Fuzzing) Notes
+        - Steps For Fuzzing Notes
+        - `fail_on_revert` Notes
+        - How to read fuzz test outputs
     - CHEATCODES FOR TESTS Notes
 
 Chisel Notes
@@ -1476,7 +1480,7 @@ contract RaffleTest is Test {
 
 ### Tests with Custom error notes
 
-When writing a test with a custom error, you need to expect the revert with `vm.expectRevert()` and you need to end it with `.selector` after the custom error.
+When writing a test with a custom error, you need to expect the revert with `vm.expectRevert()` and you need to end it with `.selector` after the custom error. 
 
 Example:
 ```js
@@ -1529,6 +1533,30 @@ contract Raffle is VRFConsumerBaseV2Plus {
     }
 ```
 
+Also, if you have a specific instance of the contract, you need not to use it for the error type and instead use the contract type/definition.
+```js
+contract DSCEngineTest is Test {
+    // even though we deploy a new instance of the DSCEngine, we cannot use this instance when calling the custom error type.
+    DSCEngine dsce;
+    function setUp() public {
+        // initialize the variables in setup function
+        deployer = new DeployDSC();
+        // get the values returns from the deployment script's `run` function and save the values to our variables dsc and dsce
+        (dsc, dsce, config) = deployer.run();
+}
+
+    function testRevertsWithUnapprovedCollateral() public {
+        ERC20Mock fakeTokenToTestWith = new ERC20Mock("fakeTokenToTestWith", "FTTTW", USER, AMOUNT_COLLATERAL);
+
+        vm.startPrank(USER);
+        // this works because we call the DSCEngine directly when calling the custom error type.
+        vm.expectRevert(DSCEngine.DSCEngine__NotAllowedToken.selector);
+        // for pretty much everything else we call on the DSCEngine contract, we call it through the new instance of the contract `dsce`
+        dsce.depositCollateral(address(fakeTokenToTestWith), AMOUNT_COLLATERAL);
+        vm.stopPrank();
+    }
+}
+```
 
 
 ### How to compare strings in Tests
@@ -1597,18 +1625,232 @@ string public constant SAD_SVG_URI =
 
  ### FUZZ TESTING NOTES
 
- For most of your testing, ideally you do most of your tests as fuzz tests. You should always try to default all of your tests to some type of fuzz testing.
+ For most of your testing, ideally you do most of your tests as fuzz tests. You should always try to default all of your tests to some type of fuzz testing. There are two types of fuzz tests, stateless fuzz testing, and stateful fuzz testing.
 
- Stateless fuzz testing:
+ `Fuzz Testing`: is when you supply random data to your system in an attempt to break it.
 
- Stateful fuzz testing:
+`Invariants`: property of our system that should always hold.
+For example, if we said our ballon is indestructable, or unbreakable, or unpoppable, the inavariant would be: the ballon cannot be broken/popped.
 
-Fuzz testing gets defaulted to 256 runs. To change the amount of tests foundry does in a fuzz test, in your `foundry.toml` change the runs number:
+Code example:
+if our contract is:
+```js
+contract MyContract {
+    uint256 public shouldAlwaysBeZero = 0;
+    uint256 private hiddenValue = 0;
+    
+    function doStuff(uint256 data) public {
+        if (data == 2) {
+            shouldAlwaysBeZero = 1;
+        }
+        if (hiddenValue == 7) {
+            shouldAlwaysBeZero = 1;
+        }
+        hiddenValue = data; 
+    }
+}
+```
+
+Then tests would be:
+```js
+contract MyContractTest is Test {
+    My contract exampleContract;
+
+    function setUp() public {
+        exampleContract = new MyContract();
+    }
+
+    // this unit wouldn't be an effective test because we can only test one number at a time in unit tests. 
+    function testIAlwaysGetZero() public {
+        uint256 data = 0;
+        exampleContract.doStuff(data);
+        assert(exampleContract.shouldAlwaysBeZero() == 0);
+    }
+
+
+    // This stateless fuzz test is much more effective because foundry will automatically randomize data and run through our code with a ton of different examples, like 1 or 2, or 34242, or 972482, or 7, or 297492649274.
+     function testIAlwaysGetZeroFuzz(uint256 data) public {
+
+        // instead of manually selecting/defining our data, we add the variable in the functions test parameter^.
+        // uint256 data = 0;
+        exampleContract.doStuff(data);
+        assert(exampleContract.shouldAlwaysBeZero() == 0);
+    }
+
+    // if you run `forge test --mt testIAlwaysGetZeroFuzz` it will return an `Assertion Failed` log with an `args=[2]` because it will find out that 2 breaks our invariant!
+
+}
+```
+
+
+ `Stateless` fuzz testing: Where the state of the previous run is discarded for every new run. link ` https://book.getfoundry.sh/forge/fuzz-testing `
+
+ `Stateful` fuzz testing: Fuzzing where the final state of your previous run is the starting state of your next run. To write a stateful fuzz test in foundry, you need the `invariant_` keyword. link: ` book.getfoundry.sh/forge/invariant-testing `
+
+Note:
+    In Foundry:
+        `Fuzz Tests` = Random Data to one function (Stateless fuzzing).
+        `Invariant Tests` = Random Data & Random Function Calls to many functions(Stateful Fuzzing).
+
+        Foundry Fuzzing = Stateless Fuzzing
+        Foundry Invariant = Stateful Fuzzing
+            (Even though they are both technically fuzzing lol)
+
+
+Stateful Fuzz Example (Open Fuzz Testing):
+```js
+// Stateful Fuzzing example
+
+// First import the StdInvariant and Test from foundry.
+import {StdInvariant} from "forge-std/StdInvariant.sol";
+import {Test} from "forge-std/Test.sol";
+
+// Inherit from StdInvariant and Test
+contract MyContractTest is StdInvariant, Test {
+    My contract exampleContract;
+
+    function setUp() public {
+        exampleContract = new MyContract();
+
+        // we need to tell foundry which contract to call random functions on. Since we only have one contract with one function, we are going to tell foundry that `myContract` should be called and its allowed to call any of the functions in `myContract`. Foundry is smart enough to know to grab any and all functions from `myContract` and call them in random orders, with random data. To do this we call `targetContract` from the parent contract `StdInvariant`.
+        targetContract(address(example));
+    }
+
+    // This is an example of open fuzz testing. Open fuzz testing means that it calls all the functions in our contract to try to break the invariant. This is good for an initial run of the code, but a better fuzz testing approach is Handler Based Fuzz Testing(see section `Handler Based Fuzz Testing (Advanced Fuzzing) Notes` (its the next section))
+
+    // To write a stateful fuzz test in foundry, you need the `invariant_` and keyword. 
+    function invariant_testAlwaysIsZero() public {
+        assert(exampleContract.shouldAlwaysBeZero == 0);
+    }
+
+    // if we run this test, the stateful fuzz test returns `FAIL. Reason: Assertion Violated` does indeed find a sequence where our invariant/assertion/property is broken.
+
+    // The sequence will logs will list every call it made and with what arguments to show us why it failed. In this case, when it ran `7`, then ran again with the final state of the previous run(7), it failed when it called the function `doStuff` again.
+}
+```
+
+
+ Note: Fuzzers are actually doing semi-random data instead of purely random data. And the way fuzzers pick the random data matters. Fuzzers won't be able to go through every single uint256, so understanding how your fuzzer picks the random data is important.
+
+
+When you run a fuzz test, you will see a log that says `(runs:256)` on the same line as your pass log. Fuzz testing gets defaulted to 256 runs, which means the fuzz test get defaulted to 256 different random inputs to make our test run.
+To change the amount of tests foundry does in a fuzz test, in your `foundry.toml` change the runs number:
+
+for stateless fuzzing/fuzz tests:
 ```js
 [fuzz]
-runs = 256 // change this number
+runs = 256 // change this number, the number of runs is important because more runs means more random inputs, more use cases, more chance you'll actually catch the issue.
 ```
+
+for stateful fuzzing/Invariant Tests:
+```js
+[invariant]
+runs = 256 // how many fuzzing runs
+depth = 128 // number of calls in a single run
+fail_on_revert = true /* or */ false // (see below)
+```
+#### `fail_on_revert` Notes
+
+`fail_on_revert = false` has some pros and cons.
+Pros: Can very quickly write open testing functions and minimal handler functions that are not perfect.
+Cons: Hard to make sure that all the calls we're making actually make sense. For example, it could be calling a depositCollateral function but it uses random collateral addresses that do not make sense.
+
+`fail_on_revert = false` can be good and can be good for a sanity check and perhaps it catches something. Is good for quick tests and can be good during competetive audits. Would be much better with mini or indepth handlers. Is great for very small contracts but the more complex the contracts are, the less sense it makes to use this, probably wont catch anything, and will probably keep breaking.
+
+Example: 
+```js
+[PASS] invariant_protocolMustHaveMoreValueThanTotalSupply() (runs: 128, calls: 16384, reverts: 16384) // an example of using `fail_on_revert = false` on a complex contract, it makes 16384 calls and every single one reverts.
+```
+
+
+`fail_on_revert = true`: can give us peace of mind knowing that if the test passes, then that means all of the transactions/calls that went through, actually went through.worked and it didn't make a bunch of really dumb calls.
+Pro: Is much more precise and better at finding bugs in bigger code bases only when it has a handler.
+Cons: More time spent writing a handler to guide the fuzz.
+
+You should always aim for `fail_on_revert = true`. However, if you make your handler too specific, you can narrow it down too much and remove edge cases that would break the system that are valid. So its kinda of a balancing game you have to play with fuzzing tests and wether or not to put `fail_on_revert` on `true` or `false`. There is an art to this.
+
+
+`fail_on_revert = true`: this will revert everytime a call in the stateful fuzz test reverts, which without a handler will probably be often. For example, it can call a withdraw function first without depositing anything, which does not make sense. Which is why it needs a handler to guide the fuzz.
+Example:
+##### How to read fuzz test outputs
+
+```js
+Failing tests:
+Encountered 1 failing test in test/fuzz/OpenInvariantsTest.t.sol:OpenInvariantsTest
+[FAIL: DSCEngine__NeedsMoreThanZero()]
+        [Sequence]
+                sender=0x00000000000000000000000000000000000007Ee addr=[src/DSCEngine.sol:DSCEngine]0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512 calldata=redeemCollateralForDsc(address,uint256,uint256) args=[0xD6EaB94B9eCD92B953bA29Ef5621429201577852, 96071856155 [9.607e10], 0]
+ invariant_protocolMustHaveMoreValueThanTotalSupply() (runs: 1, calls: 1, reverts: 1)
+
+Encountered a total of 1 failing tests, 0 tests succeeded
+```
+In this example the fuzz test failed because it called the redeemCollateralForDsc function first, which does not make sense as it does not have any deposited amount.
+
+Each time it says `sender`, it is a new run/transaction being sent by the fuzzer. In this example we only have 1.
+
+It says `calldata=redeemCollateralForDsc(address,uint256,uint256)` which is the function called and the parameters the function takes. 
+
+Then it also shows us the random values it inserted for the parameters the function needs in the same order that the function takes them: 
+```js
+args=[/* random address: */ 0xD6EaB94B9eCD92B953bA29Ef5621429201577852, /* random uint256: */96071856155 [9.607e10], /* random uint256: */ 0]
+ invariant_protocolMustHaveMoreValueThanTotalSupply()
+```
+
+Then it also tells us how many runs it did, how many calls it did, and how many reverted:
+```js
+(runs: 1, calls: 1, reverts: 1)
+```
+
+If you get an output with 0 reverts, and the test passes, this means the invariant you are asserting is holding true and is not breaking.
+Example:
+```js
+Ran 1 test for test/fuzz/Invariants.t.sol:Invariants
+[PASS] invariant_protocolMustHaveMoreValueThanTotalSupply() (runs: 128, calls: 16384, reverts: 0)
+Suite result: ok. 1 passed; 0 failed; 0 skipped; finished in 3.63s (3.63s CPU time)
+```
+
 You can learn more about fuzzing (and foundry.toml commands in general) at` https://github.com/foundry-rs/foundry/tree/master/config ` and scroll down to the fuzz section.
+
+
+
+
+
+#### Handler Based Fuzz Testing (Advanced Fuzzing) Notes
+link: ` book.getfoundry.sh/forge/invariant-testing `
+
+Protocols will have so many many different random intricacies that we want to narrow down the random call so that we have a higher likelihood of getting and catching errors/exploits/vulnerabilities/bugs.
+
+In Open Based testing, it calls any functions in the contract in any order. 
+
+In Handler based testing, we create a contract called `handler` where we call functions in specific ways. For example, when depositing tokens, we need to make sure an approve happens beforehand, if you just call deposit without approving that token, thats a kind of a wasted fuzz run. And if we onlyy have 200 fuzz runs and we're wasting them on failed fuzz runs, the chance of us actually finding a bug becomes much smaller.
+
+The `Handler` contract that we make is going to call functions in specific ways to the functions so that we have a higher likelihood of calling functions in orders that we want (higher likehood of catching bugs).
+
+
+
+
+
+
+
+#### Steps For Fuzzing Notes
+
+1. Understand/Identify the Invariants (there is most likely many more than 1). What are our invariants?
+    Invariant examples:
+        - New tokens minted < inflation rate
+        - only possible to have 1 winner in a lottery
+        - users cannot withdraw more than they deposited
+        - total supply of collateral should be more than the total value of borrowed tokens
+        - Getter view functions should never revert
+
+2. Write a fuzz test that inputs that random data to try to break the invariants.
+    1. To do this, create a `fuzzing` folder inside of the test folder.
+    2. If stateful fuzzing, create a `Handler.t.sol` file in `fuzzing` folder.
+    3. Create a `InvariantsTest.t.sol` file in `fuzzing` folder.
+
+
+
+
+
 
 
  ### CHEATCODES FOR TESTS Notes
@@ -4117,6 +4359,7 @@ function testRevertsIfCollateralIs0() public {
 ```
 If we tried to skip the approval step, the transferFrom would fail because the DSCEngine contract would have no permission to move the user's tokens.
 
+`transferFrom` is when you transfer from another person. (So this would be good in a deposit function as we are transfering tokens from a user into this contract. The other suer has to give us approval)
 
 
 
@@ -4129,6 +4372,7 @@ example:
     ourToken.transfer(alice, transferAmount);
 
 ```
+`transfer` is when you transfer from yourself(so this would be good in withdraw functions for example, as we would be sending from this contract to another user).
 
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
