@@ -15,22 +15,27 @@ import {HelperConfig} from "../../../script/HelperConfig.s.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ContinueOnRevertHandler} from "./ContinueOnRevertHandler.t.sol";
 
+/* 
+* @dev: When running these tests, make sure to have `fail_on_revert = false` in your foundry.toml
+*/
 contract ContinueOnRevertInvariants is StdInvariant, Test {
     // declare new variables at the contract level so variables are in scope for all functions
-    DeployDSC deployer;
-    DSCEngine dsce;
-    DecentralizedStableCoin dsc;
-    HelperConfig config;
-    address weth;
-    address wbtc;
-    ContinueOnRevertHandler handler;
+    DeployDSC public deployer;
+    DSCEngine public dsce;
+    DecentralizedStableCoin public dsc;
+    HelperConfig public helperConfig;
+    address public weth;
+    address public wbtc;
+    ContinueOnRevertHandler public handler;
+    address public ethUsdPriceFeed;
+    address public btcUsdPriceFeed;
 
     function setUp() external {
         // define variables declared at contract level through our deployment script variable
         deployer = new DeployDSC();
-        (dsc, dsce, config) = deployer.run();
+        (dsc, dsce, helperConfig) = deployer.run();
 
-        (,, weth, wbtc,) = config.activeNetworkConfig();
+        (ethUsdPriceFeed, btcUsdPriceFeed, weth, wbtc,) = helperConfig.activeNetworkConfig();
 
         // deploys a new handler contract and saves it as a variable named handler.
         // Handler contract has a constructor that takes the `DSCEngine _dscEngine, DecentralizedStableCoin _dsc` so we pass them here
@@ -58,9 +63,8 @@ contract ContinueOnRevertInvariants is StdInvariant, Test {
         // calls the getUsdValue function from our DSCEngine and passes it the wbtc token and the total amount deposited. This will get the value of all the wbtc in our DSCEngine contract in terms of USD
         uint256 wbtcValue = dsce.getUsdValue(wbtc, totalBtcDeposited);
 
-        console.log("weth value: ", wethValue);
-        console.log("wbtc value: ", wbtcValue);
-        console.log("total supply: ", totalSupply);
+        console.log("wethValue: %s", wethValue);
+        console.log("wbtcValue: %s", wbtcValue);
 
         // asserting that the value of all the collateral in the protocol is greater than all the debt.
         assert(wethValue + wbtcValue >= totalSupply);
