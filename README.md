@@ -1,8 +1,8 @@
-# Decentralized Stablecoin Protocol 🪙
+# 🪙 Decentralized Stablecoin Protocol 
 
 A robust, overcollateralized stablecoin protocol built on the Ethereum blockchain, featuring algorithmic stability and exogenous collateral backing. 💎
 
-## Overview 🔍
+## 🔍 Overview 
 
 This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed by cryptocurrency collateral (wETH and wBTC). The system is designed with the following key properties:
 
@@ -12,9 +12,9 @@ This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed 
 4. **Minimum Collateralization Ratio**: 200% 💪
 5. **Liquidation Threshold**: 50% of collateral value ⚠️
 
-## Technical Architecture 🏗️
+## 🏗️ Technical Architecture 
 
-### Core Components 🔧
+### 🔧 Core Components 
 
 1. **DSCEngine.sol**
    - Main protocol logic
@@ -33,7 +33,7 @@ This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed 
    - Stale price protection
    - Chainlink integration
 
-### Key Features ⭐
+### ⭐ Key Features ⭐
 
 - **Overcollateralization**: Always maintains >100% collateral backing 💰
 - **Liquidation System**: Automated position management with bonus incentives 🤖
@@ -41,7 +41,7 @@ This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed 
 - **Reentrancy Protection**: Secure against common attack vectors 🛡️
 - **Modular Design**: Separated concerns for maintainability 🧩
 
-### Security Measures 🔒
+### 🔒 Security Measures 
 
 - Comprehensive test suite including:
   - Unit tests ✅
@@ -54,7 +54,7 @@ This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed 
   - Guard checks
   - Reentrancy guards
 
-## Testing & Quality Assurance 🧪
+## 🧪 Testing & Quality Assurance 
 
 The protocol includes extensive testing infrastructure:
 
@@ -63,13 +63,13 @@ The protocol includes extensive testing infrastructure:
 - **Integration Tests**: Complete system interaction verification
 - **Mock Contracts**: Thorough edge case testing
 
-## Technical Specifications 📋
+## 📋 Technical Specifications 
 
 - Solidity Version: 0.8.19
 - Framework: Foundry
 - Dependencies: OpenZeppelin, Chainlink
 
-## Development Highlights 💡
+## 💡 Development Highlights 
 
 - Clean, well-documented code following best practices
 - Extensive commenting for maintainability
@@ -77,9 +77,9 @@ The protocol includes extensive testing infrastructure:
 - Modular architecture for upgradability
 - Comprehensive error handling
 
-## For Developers 👨‍💻
+## 👨‍💻 For Developers 
 
-### Getting Started 🎯
+### 🎯 Getting Started 
 
 1. Clone the repository
 ```bash
@@ -106,7 +106,7 @@ forge test --mt <name_of_test>
 forge coverage
 ```
 
-## Security Considerations 🛡️
+## 🛡️ Security Considerations 
 
 This protocol has been designed with security as a primary concern, implementing:
 
@@ -116,7 +116,7 @@ This protocol has been designed with security as a primary concern, implementing
 - Price feed validation
 - Emergency pause functionality
 
-### Known Considerations ⚠️
+### ⚠️ Known Considerations 
 
 1. Chainlink oracle dependency
 2. Market volatility risks
@@ -124,23 +124,19 @@ This protocol has been designed with security as a primary concern, implementing
 4. Price feed staleness checks
 5. Collateral value fluctuations
 
-## Inspiration 💫
+## 💫 Inspiration 
 
 This protocol draws inspiration from successful stablecoin systems like MakerDAO while implementing unique features and improvements. It's designed to be minimal yet robust, focusing on core functionality and security.
 
-## Contributing 🤝
+## 🤝 Contributing 
 
 Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
 
 Please make sure to update tests as appropriate.
 
-## License 📜
+## 📜 License 
 
 This project is licensed under the MIT License 
-
-## Contact 📧
-
-For questions or feedback, please open an issue or reach out to the maintainers.
 
 ---
 
