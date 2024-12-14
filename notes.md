@@ -1767,7 +1767,7 @@ Example:
 Pro: Is much more precise and better at finding bugs in bigger code bases only when it has a handler.
 Cons: More time spent writing a handler to guide the fuzz.
 
-You should always aim for `fail_on_revert = true`. However, if you make your handler too specific, you can narrow it down too much and remove edge cases that would break the system that are valid. So its kinda of a balancing game you have to play with fuzzing tests and wether or not to put `fail_on_revert` on `true` or `false`. There is an art to this.
+You should always aim for `fail_on_revert = true`. However, if you make your handler too specific, you can narrow it down too much and remove edge cases that would break the system that are valid. So its kinda of a balancing game you have to play with fuzzing tests and wether or not to put `fail_on_revert` on `true` or `false`. There is an art to this. When fuzzing testing, switch between both for maximum value. Create two folders in your fuzz folder of `continueOnRevert` and `failOnRevert`, this way you can switch between both. Start with `continueOnRevert` since this will have `fail_on_revert = false` and will be faster to write tests and handlers for. 
 
 
 `fail_on_revert = true`: this will revert everytime a call in the stateful fuzz test reverts, which without a handler will probably be often. For example, it can call a withdraw function first without depositing anything, which does not make sense. Which is why it needs a handler to guide the fuzz.
@@ -1818,6 +1818,8 @@ You can learn more about fuzzing (and foundry.toml commands in general) at` http
 #### Handler Based Fuzz Testing (Advanced Fuzzing) Notes
 link: ` book.getfoundry.sh/forge/invariant-testing `
 
+Note: Sometimes when fuzz testing, the system will continue to show the results of old tests. Run `forge clean` from time to time when fuzz testing. There will be warnings that show up as well.
+
 Protocols will have so many many different random intricacies that we want to narrow down the random call so that we have a higher likelihood of getting and catching errors/exploits/vulnerabilities/bugs.
 
 In Open Based testing, it calls any functions in the contract in any order. 
@@ -1826,14 +1828,107 @@ In Handler based testing, we create a contract called `handler` where we call fu
 
 The `Handler` contract that we make is going to call functions in specific ways to the functions so that we have a higher likelihood of calling functions in orders that we want (higher likehood of catching bugs).
 
+Our Handler should also simulate interacting with other contracts. For example, if our contract interacts with pricefeeds, tokens(like weth, wbtc or any other token), and pretty much any contract that we interact with. So our Handler should show people doing random things with the other contracts as well because people are going to do random weird things with our contracts and in combination with other contracts.
+
+Example from `foundry-defi-stablecoin-f23`:
+```js
+contract StopOnRevertHandler is Test {
+// ..skipped code
+
+MockV3Aggregator public ethUsdPriceFeed;
+
+    constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
+  // initialize the ethUsdPriceFeed variable as a Mock of a pricefeed of weth
+        ethUsdPriceFeed = MockV3Aggregator(dsce.getCollateralTokenPriceFeed(address(weth)));
+    }
+
+// fuzzing a mock of our pricefeeds.
+ function updateCOllateralPrice(uint96 newPrice) public {
+        // save the random price inputted by the fuzzer as an int256. PriceFeeds take int256 and we chose a uint96 so that the number wouldn't be so big. We chose uint instead of int as the fuzz test parameter so the AI can be as random as possible.
+        int256 newPriceInt = int256(uint256(newPrice));
+        // call the mock pricefeed's `updateAnswer` function to update the current price to the random `newPriceInt` inputted by the fuzzer.
+        ethUsdPriceFeed.updateAnswer(newPriceInt);
+    }
+}
+
+// Note: This breaks our invariant test suite as if the price of the collateral plummets in a crash, our entire system would break. This is why we are using weth and wbtc as collateral and not memecoins. This is a known issue.
+```
 
 
 
+`bound`: The bound function is a Foundry utility (from forge-std) that constrains a fuzzed value to be within a specific range. It's particularly useful in fuzz testing to keep randomly generated values within reasonable and valid bounds. In the example below, you can see we ran `amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE);`, here we passes it the parameter that we want to bound, the minimum amount and the max amount the parameter can be, and then we saved it as the parameter `amountCollateral` itself.
+
+Example from foundry-defi-stablecoin-f23/test/fuzz/Handler.t.sol:
+```js
+
+     // why don't we do max uint256? because if we deposit the max uint256, then the next stateful fuzz test run is +1 or more, it will revert.
+    uint256 public constant MAX_DEPOSIT_SIZE = type(uint96).max; // the max uint96 value
+
+    // to fix random collateral address, we are going to tell foundry to only deposit either weth or wbtc.
+    function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+        // Gets either WETH or WBTC token based on whether collateralSeed is even or odd and saves it as a variable named collateral
+        // This ensures we only test with valid collateral tokens that our system accepts
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+
+        // Bound the amountCollateral to be between:
+        // - Minimum: 1 (since we can't deposit 0)
+        // - Maximum: MAX_DEPOSIT_SIZE (type(uint96).max)
+        // This prevents:
+        // 1. Zero deposits which would revert
+        // 2. Deposits so large they could overflow in subsequent tests
+        // 3. Ensures amounts are realistic and within system limits
+        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE); // The bound function is a Foundry utility (from forge-std) that constrains a fuzzed value to be within a specific range.
+
+        vm.startPrank(msg.sender);
+        collateral.mint(msg.sender, amountCollateral);
+        collateral.approve(address(dsce), amountCollateral);
+
+        // Call the DSCEngine's depositCollateral function with:
+        // 1. The selected collateral token's address
+        // 2. The randomly generated amount of collateral to deposit
+        dsce.depositCollateral(address(collateral), amountCollateral);
+        vm.stopPrank();
+    }
+```
 
 
 
 #### Steps For Fuzzing Notes
 
+`Stateless Fuzzing`:
+To stateless fuzz a function, you can pass the data you want to fuzz test into the parameter of the test.
+
+```js
+contract MyContractTest is Test {
+    My contract exampleContract;
+
+    function setUp() public {
+        exampleContract = new MyContract();
+    }
+
+    // this unit wouldn't be an effective test because we can only test one number at a time in unit tests. 
+    function testIAlwaysGetZero() public {
+        uint256 data = 0;
+        exampleContract.doStuff(data);
+        assert(exampleContract.shouldAlwaysBeZero() == 0);
+    }
+
+
+    // This stateless fuzz test is much more effective because foundry will automatically randomize data and run through our code with a ton of different examples, like 1 or 2, or 34242, or 972482, or 7, or 297492649274.
+     function testIAlwaysGetZeroFuzz(uint256 data) public {
+
+        // instead of manually selecting/defining our data, we add the variable in the functions test parameter^.
+        // uint256 data = 0;
+        exampleContract.doStuff(data);
+        assert(exampleContract.shouldAlwaysBeZero() == 0);
+    }
+
+    // if you run `forge test --mt testIAlwaysGetZeroFuzz` it will return an `Assertion Failed` log with an `args=[2]` because it will find out that 2 breaks our invariant!
+
+}
+```
+
+`Stateful Fuzzing`:
 1. Understand/Identify the Invariants (there is most likely many more than 1). What are our invariants?
     Invariant examples:
         - New tokens minted < inflation rate
@@ -1844,10 +1939,178 @@ The `Handler` contract that we make is going to call functions in specific ways 
 
 2. Write a fuzz test that inputs that random data to try to break the invariants.
     1. To do this, create a `fuzzing` folder inside of the test folder.
-    2. If stateful fuzzing, create a `Handler.t.sol` file in `fuzzing` folder.
-    3. Create a `InvariantsTest.t.sol` file in `fuzzing` folder.
+    2. Create a `continueOnRevert` folder and a `failOnRevert` folder.
+        1. Work on `continueOnRevert` folder first as this will run with `fail_on_Revert = false`. Create mini `Handler.t.sol`. Can find bugs if you narrow down the mini `Handler.t.sol` enough.
+            1. Create a `ContinueOnRevertHandler.t.sol` file in `continueOnRevert` to write the handler in.
+            2. Create a `ContinueOnRevertInvariants.t.sol` file in `continueOnRevert` to write fuzz tests in.
+        2. Then work on `failOnRevert` afterwards as this will take more time and will use `fail_on_Revert = true`. Create `Handler.t.sol` to guide the fuzzing
+            1. Create a `StopOnRevertHandler.t.sol` file in `FailOnRevert` to write the handler in.
+            2. Create a `StopOnRevertInvariants.t.sol` file in `FailOnRevert` to write fuzz tests in.
+        
 
 
+Example Invariant Test & Handler:
+
+Handler (from foundry-defi-stablecoin-f23):
+```js
+// SPDX-License-Identifier: MIT
+
+// Handler is going to narrow down the way we call functions.
+
+pragma solidity 0.8.19;
+
+import {Test, console} from "forge-std/Test.sol";
+import {DSCEngine} from "src/DSCEngine.sol";
+import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
+import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
+
+contract Handler is Test {
+    // declare new variables at the contract level so variables are in scope for all functions
+    DSCEngine dsce;
+    DecentralizedStableCoin dsc;
+
+    ERC20Mock weth;
+    ERC20Mock wbtc;
+
+    // why don't we do max uint256? because if we deposit the max uint256, then the next stateful fuzz test run is +1 or more, it will revert.
+    uint256 public constant MAX_DEPOSIT_SIZE = type(uint96).max; // the max uint96 value
+
+    constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
+        // define variables declared at contract level at set them when this contract is first deployed
+        dsce = _dscEngine;
+        dsc = _dsc;
+
+        // Get the list of allowed collateral tokens from DSCEngine and save it in a new array named collateralTokens
+        address[] memory collateralTokens = dsce.getCollateralTokens();
+
+        // Cast the tokens to ERC20Mock type for testing. This ensures our fuzzing tests are always aligned with the actual system configuration, making the tests more reliable and maintainable while also being able to mint tokens for the pranked user
+        // Cast the first collateral token address (index 0) to an ERC20Mock type and assign it to weth
+        // This assumes the first token in the collateralTokens array is WETH
+        weth = ERC20Mock(collateralTokens[0]);
+        // Cast the second collateral token address (index 1) to an ERC20Mock type and assign it to wbtc
+        // This assumes the second token in the collateralTokens array is WBTC
+        wbtc = ERC20Mock(collateralTokens[1]);
+    }
+
+    // in the handlers functions, what ever parameters you have are going to be randomized
+    // function depositCollateral(address collateral, uint256 amountCollateral) public {
+    // this does not work because it chooses a random collateral address and tries to deposit it, when our DSCEngine only takes weth and btc. Also it could try to deposit 0 amount, which will fail because our DSCEngine reverts on 0 transfers.
+    // dsce.depositCollateral(collateral, amountCollateral);
+    // }
+
+    // to fix random collateral address, we are going to tell foundry to only deposit either weth or wbtc.
+    function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+        // Gets either WETH or WBTC token based on whether collateralSeed is even or odd and saves it as a variable named collateral
+        // This ensures we only test with valid collateral tokens that our system accepts
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+
+        // Bound the amountCollateral to be between:
+        // - Minimum: 1 (since we can't deposit 0)
+        // - Maximum: MAX_DEPOSIT_SIZE (type(uint96).max)
+        // This prevents:
+        // 1. Zero deposits which would revert
+        // 2. Deposits so large they could overflow in subsequent tests
+        // 3. Ensures amounts are realistic and within system limits
+        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE); // The bound function is a Foundry utility (from forge-std) that constrains a fuzzed value to be within a specific range.
+
+        vm.startPrank(msg.sender);
+        collateral.mint(msg.sender, amountCollateral);
+        collateral.approve(address(dsce), amountCollateral);
+
+        // Call the DSCEngine's depositCollateral function with:
+        // 1. The selected collateral token's address
+        // 2. The randomly generated amount of collateral to deposit
+        dsce.depositCollateral(address(collateral), amountCollateral);
+        vm.stopPrank();
+    }
+
+    //////////////////////////
+    //   Helper Functions   //
+    /////////////////////////
+
+    function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
+        // if the collateralSeed(number) inputted divided by 2 has a remainder of 0, then return the weth address.
+        if (collateralSeed % 2 == 0) {
+            return weth;
+        }
+        // if the collateralSeed(number) inputted divided by 2 has a remainder of anything else(1), then return the wbtc address.
+        return wbtc;
+    }
+}
+```
+
+Invariant Stateful Fuzz Test (from foundry-defi-stablecoin-f23):
+```js
+// SPDX-License-Identifier: MIT
+
+// What are our Invariants?
+//  - total supply of collateral should be more than the total value of borrowed tokens
+//  - Getter view functions should never revert
+
+pragma solidity 0.8.19;
+
+import {Test, console} from "forge-std/Test.sol";
+import {StdInvariant} from "forge-std/StdInvariant.sol";
+import {DecentralizedStableCoin} from "../../src/DecentralizedStableCoin.sol";
+import {DSCEngine} from "src/DSCEngine.sol";
+import {DeployDSC} from "script/DeployDSCEngine.s.sol";
+import {HelperConfig} from "../../script/HelperConfig.s.sol";
+import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {Handler} from "./Handler.t.sol";
+
+contract Invariants is StdInvariant, Test {
+    // declare new variables at the contract level so variables are in scope for all functions
+    DeployDSC deployer;
+    DSCEngine dsce;
+    DecentralizedStableCoin dsc;
+    HelperConfig config;
+    address weth;
+    address wbtc;
+    Handler handler;
+
+    function setUp() external {
+        // define variables declared at contract level through our deployment script variable
+        deployer = new DeployDSC();
+        (dsc, dsce, config) = deployer.run();
+
+        (,, weth, wbtc,) = config.activeNetworkConfig();
+
+        // deploys a new handler contract and saves it as a variable named handler.
+        // Handler contract has a constructor that takes the `DSCEngine _dscEngine, DecentralizedStableCoin _dsc` so we pass them here
+        handler = new Handler(dsce, dsc);
+        // calls `targetContract` from parent contract `StdInvariant` to tell foundry that it has access to all functions in our handler contract and to call them in a random order with random data.
+        targetContract(address(handler));
+    }
+
+    function invariant_protocolMustHaveMoreValueThanTotalSupply() public view {
+        // get the value of all the collateral in the protocol
+        // compare it to all the debt
+
+        // gets the total supply of dsc in the entire world. We know that the only way to mint DSC is through the DSCEngine. DSC is the debt users mint.
+        uint256 totalSupply = dsc.totalSupply();
+
+        // gets the balance of all the weth tokens in the DSCEngine contract and saves it as a variable named totalWethDeposited.
+        uint256 totalWethDeposited = IERC20(weth).balanceOf(address(dsce));
+
+        // gets the balance of all the wbtc tokens in the DSCEngine contract and saves it as a variable named totalBtcDeposited.
+        uint256 totalBtcDeposited = IERC20(wbtc).balanceOf(address(dsce));
+
+        // calls the getUsdValue function from our DSCEngine and passes it the weth token and the total amount deposited. This will get the value of all the weth in our DSCEngine contract in terms of USD
+        uint256 wethValue = dsce.getUsdValue(weth, totalWethDeposited);
+
+        // calls the getUsdValue function from our DSCEngine and passes it the wbtc token and the total amount deposited. This will get the value of all the wbtc in our DSCEngine contract in terms of USD
+        uint256 wbtcValue = dsce.getUsdValue(wbtc, totalBtcDeposited);
+
+        console.log("weth value: ", wethValue);
+        console.log("wbtc value: ", wbtcValue);
+        console.log("total supply: ", totalSupply);
+
+        // asserting that the value of all the collateral in the protocol is greater than all the debt.
+        assert(wethValue + wbtcValue >= totalSupply);
+    }
+}
+
+```
 
 
 
@@ -2844,6 +3107,8 @@ It is important to check the contracts, functions, and parameters being sent whe
 
 ## TIPS AND TRICKS
 
+run `forge inspect <contract-Name> methods` to see all the function names and its corresponding function selector. Example: `forge inspect DSCEngine methods` 
+
 run `forge fmt` to auto format your code. If you run `forge fmt` and it is not formatting the way you want, then go to you solidity extension (should be Nomic Foundation's Solidity), click settings, extension settings, and toggle the solidity formatter setting between prettier & forge to set the one you like more. Then when you save your code or run `forge fmt` it should format correctly.
 
 run `forge coverage` to see how many lines of code have been tested.
@@ -2911,7 +3176,7 @@ Open the command pallete with `ctrl + shift + p ` and search for `join lines`. I
 Chainlink functions allow you to make any API call in a decentralized context through decentralized nodes. Chainlink functions will be the future of DeFi and smart contracts. If you want to make something novel and something that has never been done before, you should check out chainlink functions. You can learn more about chainlink functions at `docs.chain.link/chainlink-functions`.
 
 ### Aggregator PriceFeeds Notes
-Smart Contracts by themselves cannot access data outside of their own contracts. They cannot tell what the price of tokens are, what day it is, or who the president is. This is where chainlink datafeeds come in. Chainlink datafeeds take in data from many decentralized sources and their decentralized chainlink nodes decide what data is true based off their many decentralized sources. You can learn more about chainlink datafeeds in the chaink docs at `docs.chain.link` or at `https://updraft.cyfrin.io/courses/solidity/fund-me/real-world-price-data`.
+Smart Contracts by themselves cannot access data outside of their own contracts. They cannot tell what the price of tokens are, what day it is, or who the president is. This is where chainlink datafeeds come in. Chainlink datafeeds take in data from many decentralized sources and their decentralized chainlink nodes decide what data is true based off their many decentralized sources. This is what is known as an oracle. You can learn more about chainlink datafeeds in the chaink docs at `docs.chain.link` or at `https://updraft.cyfrin.io/courses/solidity/fund-me/real-world-price-data`.
 
 Pricefeeds are a type of datafeed from chainlink. You can see examples at data.chain.link. To use pricefeeds, you will need the address of the pricefeed and the interface of the AggregatorV3Interface.
 
@@ -3339,6 +3604,86 @@ contract DeployFundMe is Script {
     }
 }
 
+```
+
+Note: As advanced as Chainlink oracles are, Chainlink is a system just like any other system. Sometimes systems can go down. So we need to add checks to make sure everything is working properly.
+
+What we want to do is to make sure that the prices from Chainlink's datafeeds are not stale. If you go to chainlinks pricefeed address page and select `show more details`, it will reveal a tab named `Heartbeat` ( https://docs.chain.link/data-feeds/price-feeds/addresses?network=ethereum&page=1 ). This `Heartbeat` tab shows how often in seconds a the price should be updated. 
+
+So we want to write checks in our system to make sure that the price is indeed updating every x amount of seconds as chainlink says, and if it is not, we should pause the functionality of our contracts.
+
+To do this, we can create a library to check the Chainlink Oracle for stale data:
+(this library would go in src/libraries/OracleLib.sol)
+```js
+// SPDX-License-Identifier: MIT
+
+pragma solidity 0.8.19;
+
+import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+
+/* 
+ * @title OracleLib
+ * @author Squilliam
+ * @notice This library is used to check the Chainlink Oracle for stale data.
+ * If a price is stale, the function will revert and render the DSCEngine unusable - this is by design
+ * We want the DSCEngine to freeze if prices becomes stale.
+ * 
+ * So if the Chainlink network explodes and you have a lot of money locked in the protocol... a pause will begin in order to protect users funds
+ */
+library OracleLib {
+    // Custom error for when price data is considered stale
+    error OracleLib__StalePrice();
+
+    // `hours` is a solidity keyword, means 3 * 60 * 60 = 10800 seconds
+    uint256 private constant TIMEOUT = 3 hours;
+
+    /**
+     * @notice Checks if the latest price data from Chainlink is fresh (not stale)
+     * @param priceFeed The Chainlink price feed to check
+     * @return A tuple containing the round data from Chainlink:
+     *         - roundId: The round ID of the price data
+     *         - answer: The price value
+     *         - startedAt: Timestamp when the round started
+     *         - updatedAt: Timestamp when the round was last updated
+     *         - answeredInRound: The round ID in which the answer was computed
+     */
+    function staleCheckLatestRoundData(AggregatorV3Interface priceFeed)
+        public
+        view
+        returns (
+            // returns the same return value of the latest round data function in an aggregator v3
+            uint80,
+            int256,
+            uint256,
+            uint256,
+            uint80
+        )
+    {
+        // Get the latest round data from the Chainlink price feed
+        (uint80 roundId, int256 answer, uint256 startedAt, uint256 updatedAt, uint80 answeredInRound) =
+            priceFeed.latestRoundData();
+
+        // Calculate how many seconds have passed since the last update
+        uint256 secondsSince = block.timestamp - updatedAt;
+
+        // If more time has passed than our TIMEOUT, consider the price stale and revert
+        if (secondsSince > TIMEOUT) {
+            revert OracleLib__StalePrice();
+        }
+
+        // If price is fresh, return all the round data
+        return (roundId, answer, startedAt, updatedAt, answeredInRound);
+    }
+}
+```
+
+Then in our main contracts, we use this OracleLib library as a type:
+```js
+contract DSCEngine is ReentrancyGuard {
+    // ..skipped code
+    using OracleLib for AggregatorV3Interface;
+    // ..skipped code
+}
 ```
 
 
