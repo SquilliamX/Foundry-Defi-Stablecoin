@@ -9,162 +9,157 @@ import {DSCEngine} from "src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../../../src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
 import {MockV3Aggregator} from "../../mocks/MockV3Aggregator.sol";
+import {EnumerableSet} from "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 contract StopOnRevertHandler is Test {
-    // declare new variables at the contract level so variables are in scope for all functions
-    DSCEngine dsce;
-    DecentralizedStableCoin dsc;
+    using EnumerableSet for EnumerableSet.AddressSet;
 
-    ERC20Mock weth;
-    ERC20Mock wbtc;
-
-    uint256 public timeMintIsCalled;
-    address[] public usersWithCollateralDeposited;
-
+    // Deployed contracts to interact with
+    DSCEngine public dscEngine;
+    DecentralizedStableCoin public dsc;
     MockV3Aggregator public ethUsdPriceFeed;
+    MockV3Aggregator public btcUsdPriceFeed;
+    ERC20Mock public weth;
+    ERC20Mock public wbtc;
 
-    // why don't we do max uint256? because if we deposit the max uint256, then the next stateful fuzz test run is +1 or more, it will revert.
-    uint256 public constant MAX_DEPOSIT_SIZE = type(uint96).max; // the max uint96 value
+    // Ghost Variables
+    uint96 public constant MAX_DEPOSIT_SIZE = type(uint96).max;
 
     constructor(DSCEngine _dscEngine, DecentralizedStableCoin _dsc) {
-        // define variables declared at contract level at set them when this contract is first deployed
-        dsce = _dscEngine;
+        // Store the reference to the main DSCEngine contract that we'll be testing
+        dscEngine = _dscEngine;
+        // Store the reference to the DecentralizedStableCoin contract that we'll be testing
         dsc = _dsc;
 
-        // Get the list of allowed collateral tokens from DSCEngine and save it in a new array named collateralTokens
-        address[] memory collateralTokens = dsce.getCollateralTokens();
-
-        // Cast the tokens to ERC20Mock type for testing. This ensures our fuzzing tests are always aligned with the actual system configuration, making the tests more reliable and maintainable while also being able to mint tokens for the pranked user
-        // Cast the first collateral token address (index 0) to an ERC20Mock type and assign it to weth
-        // This assumes the first token in the collateralTokens array is WETH
+        // Get the array of allowed collateral token addresses from DSCEngine
+        address[] memory collateralTokens = dscEngine.getCollateralTokens();
+        // Store the first collateral token (WETH) from the array
         weth = ERC20Mock(collateralTokens[0]);
-        // Cast the second collateral token address (index 1) to an ERC20Mock type and assign it to wbtc
-        // This assumes the second token in the collateralTokens array is WBTC
+        // Store the second collateral token (WBTC) from the array
         wbtc = ERC20Mock(collateralTokens[1]);
 
-        // initialize the ethUsdPriceFeed variable as a Mock of a pricefeed of weth
-        ethUsdPriceFeed = MockV3Aggregator(dsce.getCollateralTokenPriceFeed(address(weth)));
+        // Get and store the Chainlink price feed address for WETH from DSCEngine
+        ethUsdPriceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(weth)));
+        // Get and store the Chainlink price feed address for WBTC from DSCEngine
+        btcUsdPriceFeed = MockV3Aggregator(dscEngine.getCollateralTokenPriceFeed(address(wbtc)));
     }
 
-    // in the handlers functions, what ever parameters you have are going to be randomized
-    // function depositCollateral(address collateral, uint256 amountCollateral) public {
-    // this does not work because it chooses a random collateral address and tries to deposit it, when our DSCEngine only takes weth and btc. Also it could try to deposit 0 amount, which will fail because our DSCEngine reverts on 0 transfers.
-    // dsce.depositCollateral(collateral, amountCollateral);
-    // }
+    // FUNCTIONS TO INTERACT WITH
 
-    // to fix random collateral address, we are going to tell foundry to only deposit either weth or wbtc.
-    function depositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
-        // Gets either WETH or WBTC token based on whether collateralSeed is even or odd and saves it as a variable named collateral
-        // This ensures we only test with valid collateral tokens that our system accepts
+    ///////////////
+    // DSCEngine //
+    ///////////////
+    function mintAndDepositCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
+        // Ensure amount is at least 1 and no larger than MAX_DEPOSIT_SIZE (uint96.max)
+        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE);
+        // Get either WETH or WBTC based on whether collateralSeed is even or odd
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
 
-        // Bound the amountCollateral to be between:
-        // - Minimum: 1 (since we can't deposit 0)
-        // - Maximum: MAX_DEPOSIT_SIZE (type(uint96).max)
-        // This prevents:
-        // 1. Zero deposits which would revert
-        // 2. Deposits so large they could overflow in subsequent tests
-        // 3. Ensures amounts are realistic and within system limits
-        amountCollateral = bound(amountCollateral, 1, MAX_DEPOSIT_SIZE); // The bound function is a Foundry utility (from forge-std) that constrains a fuzzed value to be within a specific range.
-
+        // Start a new transaction context for msg.sender
         vm.startPrank(msg.sender);
+        // Mint the collateral tokens to the user (simulating they have the tokens)
         collateral.mint(msg.sender, amountCollateral);
-        collateral.approve(address(dsce), amountCollateral);
-
-        // Call the DSCEngine's depositCollateral function with:
-        // 1. The selected collateral token's address
-        // 2. The randomly generated amount of collateral to deposit
-        dsce.depositCollateral(address(collateral), amountCollateral);
+        // Approve DSCEngine to spend the user's collateral tokens
+        collateral.approve(address(dscEngine), amountCollateral);
+        // Deposit the collateral into DSCEngine
+        dscEngine.depositCollateral(address(collateral), amountCollateral);
+        // End the transaction context
         vm.stopPrank();
-        // push the msg.sender that the fuzzer generates into our array to keep track of him
-        // double push - In a stateful fuzz test, the same function can be called multiple times with different inputs. So if the fuzzer calls depositCollateral() twice for the same msg.sender, that address will be pushed to the usersWithCollateralDeposited array twice.
-        usersWithCollateralDeposited.push(msg.sender);
     }
 
     function redeemCollateral(uint256 collateralSeed, uint256 amountCollateral) public {
-        // Get either WETH or WBTC token based on the collateralSeed
+        // Get either WETH or WBTC based on whether collateralSeed is even or odd
         ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        // Get the maximum amount of collateral the user has deposited
+        uint256 maxCollateral = dscEngine.getCollateralBalanceOfUser(msg.sender, address(collateral));
 
-        // Get the maximum amount of collateral this user has deposited in the DSCEngine
-        uint256 maxCollateralToRedeem = dsce.getCollateralBalanceOfUser(msg.sender, address(collateral));
-
-        // Bound the random amountCollateral to be between 0 and the user's actual collateral balance
-        amountCollateral = bound(amountCollateral, 0, maxCollateralToRedeem);
-
-        // However, if there was a bug in the code allowing users to redeem more than they deposit, the line above would not catch it. What would catch it is `fail_on_revert = false` and the following line:
-        // amountCollateral = bound(amountCollateral, 0, MAX_DEPOSIT_SIZE);
-        //`fail_on_revert = false` would catch this bug and `fail_on_revert = true` would not. keep this in mind. fuzzing is an art.
-
-        // If the bounded amount is 0, return early since we can't redeem 0 collateral
+        // Ensure amount is between 0 and user's max collateral
+        amountCollateral = bound(amountCollateral, 0, maxCollateral);
+        // If amount is 0, return early to avoid unnecessary transactions
         if (amountCollateral == 0) {
             return;
         }
-
-        // Call DSCEngine's redeemCollateral function as the msg.sender
-        // This will:
-        // 1. Update internal accounting
-        // 2. Transfer collateral back to user
-        // 3. Check health factor remains valid
+        // Execute redemption as msg.sender
         vm.prank(msg.sender);
-        dsce.redeemCollateral(address(collateral), amountCollateral);
+        dscEngine.redeemCollateral(address(collateral), amountCollateral);
     }
 
-    function mintDsc(uint256 amount, uint256 addressSeed) public {
-        // If no one has deposited collateral, we can't mint
-        if (usersWithCollateralDeposited.length == 0) {
+    function burnDsc(uint256 amountDsc) public {
+        // Ensure amount is between 0 and user's DSC balance
+        amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
+        // If amount is 0, return early to avoid unnecessary transactions
+        if (amountDsc == 0) {
             return;
         }
-        // Pick a user who has deposited collateral
-        address sender = usersWithCollateralDeposited[addressSeed % usersWithCollateralDeposited.length];
-        // Get the user's current DSC minted and collateral value
-        (uint256 totalDscMinted, uint256 collateralValueInUsd) = dsce.getAccountInformation(sender);
-
-        // Calculate maximum DSC that can be minted:
-        // - collateralValueInUsd / 2: Maximum allowed DSC is 50% of collateral value
-        // - Subtract totalDscMinted: Account for DSC already minted
-        // - Cast to int256 to handle negative cases
-        int256 maxDscToMint = int256(collateralValueInUsd / 2) - int256(totalDscMinted);
-
-        // If user has already minted more than 50% of their collateral value,
-        // maxDscToMint will be negative, so return early
-        if (maxDscToMint < 0) {
-            return;
-        }
-
-        // Bound the random amount between 0 and the maximum allowed mint amount
-        amount = bound(amount, 0, uint256(maxDscToMint));
-
-        // If the bounded amount is 0, return early since we can't mint 0 DSC
-        if (amount == 0) {
-            return;
-        }
-
-        // Mint the DSC tokens
-        vm.startPrank(sender);
-        dsce.mintDsc(amount);
+        // Start a new transaction context for msg.sender
+        vm.startPrank(msg.sender);
+        // Approve DSCEngine to spend the user's DSC tokens
+        dsc.approve(address(dscEngine), amountDsc);
+        // Burn the DSC tokens
+        dscEngine.burnDsc(amountDsc);
+        // End the transaction context
         vm.stopPrank();
-
-        timeMintIsCalled++;
     }
 
+    function liquidate(uint256 collateralSeed, address userToBeLiquidated, uint256 debtToCover) public {
+        // Get system's minimum required health factor
+        uint256 minHealthFactor = dscEngine.getMinHealthFactor();
+        // Get user's current health factor
+        uint256 userHealthFactor = dscEngine.getHealthFactor(userToBeLiquidated);
+        // If user's health factor is above minimum, they can't be liquidated so return early
+        if (userHealthFactor >= minHealthFactor) {
+            return;
+        }
+        // Ensure debt amount is between 1 and uint96.max
+        debtToCover = bound(debtToCover, 1, uint256(type(uint96).max));
+        // Get either WETH or WBTC based on whether collateralSeed is even or odd
+        ERC20Mock collateral = _getCollateralFromSeed(collateralSeed);
+        // Execute the liquidation
+        dscEngine.liquidate(address(collateral), userToBeLiquidated, debtToCover);
+    }
+
+    /////////////////////////////
+    // DecentralizedStableCoin //
+    /////////////////////////////
+    function transferDsc(uint256 amountDsc, address to) public {
+        // If the destination address is zero address (0x0), set it to address(1)
+        // This prevents transfers to the zero address which would revert our fuzz
+        if (to == address(0)) {
+            to = address(1);
+        }
+
+        // Bound the transfer amount between 0 and the sender's current DSC balance
+        // This ensures we don't try to transfer more than the user has
+        amountDsc = bound(amountDsc, 0, dsc.balanceOf(msg.sender));
+
+        // Start a transaction context as msg.sender using Forge's vm.prank
+        vm.prank(msg.sender);
+
+        // Execute the transfer of DSC tokens from msg.sender to the destination address
+        // This calls the transfer function on the DecentralizedStableCoin contract
+        dsc.transfer(to, amountDsc);
+    }
+
+    /////////////////////////////
+    // Aggregator //
+    /////////////////////////////
     // This breaks our invariant test suite as if the price of the collateral plummets in a crash, our entire system would break. This is why we are using weth and wbtc as collateral and not memecoins. This is a known issue.
     // function updateCollateralPrice(uint96 newPrice) public {
-    //     // save the random price inputted by the fuzzer as an int256. PriceFeeds take int256 and we chose a uint96 so that the number wouldn't be so big. We chose uint instead of int as the fuzz test parameter so the AI can be as random as possible.
+    //     // save the random price inputted by the fuzzer as an int256. PriceFeeds take int256 and we chose a uint96 so that the number wouldn't be so big. We chose uint instead of int as the fuzz test parameter so the fuzzer can be as random as possible.
     //     int256 newPriceInt = int256(uint256(newPrice));
     //     // call the mock pricefeed's `updateAnswer` function to update the current price to the random `newPriceInt` inputted by the fuzzer.
     //     ethUsdPriceFeed.updateAnswer(newPriceInt);
     // }
 
-    //////////////////////////
-    //   Helper Functions   //
-    /////////////////////////
-
+    /// Helper Functions
     function _getCollateralFromSeed(uint256 collateralSeed) private view returns (ERC20Mock) {
-        // if the collateralSeed(number) inputted divided by 2 has a remainder of 0, then return the weth address.
+        // If the seed is even, return WETH
+        // If the seed is odd, return WBTC
+        // This provides a deterministic but pseudo-random way to select collateral
         if (collateralSeed % 2 == 0) {
             return weth;
+        } else {
+            return wbtc;
         }
-        // if the collateralSeed(number) inputted divided by 2 has a remainder of anything else(1), then return the wbtc address.
-        return wbtc;
     }
 }
