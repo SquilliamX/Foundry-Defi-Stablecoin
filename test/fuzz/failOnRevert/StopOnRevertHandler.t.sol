@@ -8,6 +8,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {DSCEngine} from "src/DSCEngine.sol";
 import {DecentralizedStableCoin} from "../../../src/DecentralizedStableCoin.sol";
 import {ERC20Mock} from "@openzeppelin/contracts/mocks/ERC20Mock.sol";
+import {MockV3Aggregator} from "../../mocks/MockV3Aggregator.sol";
 
 contract StopOnRevertHandler is Test {
     // declare new variables at the contract level so variables are in scope for all functions
@@ -19,6 +20,8 @@ contract StopOnRevertHandler is Test {
 
     uint256 public timeMintIsCalled;
     address[] public usersWithCollateralDeposited;
+
+    MockV3Aggregator public ethUsdPriceFeed;
 
     // why don't we do max uint256? because if we deposit the max uint256, then the next stateful fuzz test run is +1 or more, it will revert.
     uint256 public constant MAX_DEPOSIT_SIZE = type(uint96).max; // the max uint96 value
@@ -38,6 +41,9 @@ contract StopOnRevertHandler is Test {
         // Cast the second collateral token address (index 1) to an ERC20Mock type and assign it to wbtc
         // This assumes the second token in the collateralTokens array is WBTC
         wbtc = ERC20Mock(collateralTokens[1]);
+
+        // initialize the ethUsdPriceFeed variable as a Mock of a pricefeed of weth
+        ethUsdPriceFeed = MockV3Aggregator(dsce.getCollateralTokenPriceFeed(address(weth)));
     }
 
     // in the handlers functions, what ever parameters you have are going to be randomized
@@ -140,6 +146,14 @@ contract StopOnRevertHandler is Test {
 
         timeMintIsCalled++;
     }
+
+    // This breaks our invariant test suite as if the price of the collateral plummets in a crash, our entire system would break. This is why we are using weth and wbtc as collateral and not memecoins. This is a known issue.
+    // function updateCollateralPrice(uint96 newPrice) public {
+    //     // save the random price inputted by the fuzzer as an int256. PriceFeeds take int256 and we chose a uint96 so that the number wouldn't be so big. We chose uint instead of int as the fuzz test parameter so the AI can be as random as possible.
+    //     int256 newPriceInt = int256(uint256(newPrice));
+    //     // call the mock pricefeed's `updateAnswer` function to update the current price to the random `newPriceInt` inputted by the fuzzer.
+    //     ethUsdPriceFeed.updateAnswer(newPriceInt);
+    // }
 
     //////////////////////////
     //   Helper Functions   //
