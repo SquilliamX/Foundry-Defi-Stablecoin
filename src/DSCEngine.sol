@@ -4,6 +4,7 @@ import {DecentralizedStableCoin} from "./DecentralizedStableCoin.sol";
 import {ReentrancyGuard} from "@openzeppelin/contracts/security/ReentrancyGuard.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {AggregatorV3Interface} from "@chainlink/contracts/src/v0.8/interfaces/AggregatorV3Interface.sol";
+import {OracleLib} from "./libraries/OracleLib.sol";
 
 pragma solidity 0.8.19;
 
@@ -38,6 +39,11 @@ contract DSCEngine is ReentrancyGuard {
     error DSCEngine__HealthFactorNotImproved();
     error DSCEngine__TokenAddressesAndPriceFeedAddressesAmountsDontMatch();
     error DSCEngine__BreaksHealthFactor(uint256 healthFactorValue);
+
+    ///////////////////
+    //     Type     //
+    //////////////////
+    using OracleLib for AggregatorV3Interface;
 
     ///////////////////////////////
     //      State Variables      //
@@ -403,7 +409,7 @@ contract DSCEngine is ReentrancyGuard {
         }
     }
 
-     /////////////////////////////////////////////
+    /////////////////////////////////////////////
     //    Private & Internal View Functions    //
     /////////////////////////////////////////////
 
@@ -463,17 +469,16 @@ contract DSCEngine is ReentrancyGuard {
     //    Public & External View & Pure Functions    //
     ///////////////////////////////////////////////////
 
-     function calculateHealthFactor(
-        uint256 totalDscMinted,
-        uint256 collateralValueInUsd
-    )
+    function calculateHealthFactor(uint256 totalDscMinted, uint256 collateralValueInUsd)
         external
         pure
         returns (uint256)
     {
+        // External view of health factor calculation
+        // Returns: >= 1e18 means healthy, < 1e18 means liquidatable
+        // Example: $1000 collateral / $500 DSC = 2e18 (healthy)
         return _calculateHealthFactor(totalDscMinted, collateralValueInUsd);
     }
-
 
     function getTokenAmountFromUsd(address token, uint256 usdAmountInWei) public view returns (uint256) {
         // Get the price feed for this token from our mapping
@@ -481,7 +486,7 @@ contract DSCEngine is ReentrancyGuard {
 
         // Get the latest price from Chainlink
         // We only care about the price, so we ignore other returned values using commas
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
 
         // Calculate how many tokens the USD amount can buy:
         // 1. Multiply usdAmount by PRECISION (1e18) for precision
@@ -519,7 +524,7 @@ contract DSCEngine is ReentrancyGuard {
         // gets the priceFeed of the token inputted by the user and saves it as a variable named priceFeed of type AggregatorV3Interface
         AggregatorV3Interface priceFeed = AggregatorV3Interface(s_priceFeeds[token]);
         // out of all the data that is returned by the pricefeed, we only want to save the price
-        (, int256 price,,,) = priceFeed.latestRoundData();
+        (, int256 price,,,) = priceFeed.staleCheckLatestRoundData();
         // Calculate USD value while handling decimal precision:
         // 1. Convert price to uint256 and multiply by ADDITIONAL_FEED_PRECISION(1e10(add 10 zeros for precision)) to match token decimals
         // 2. Multiply by the token amount
@@ -532,70 +537,110 @@ contract DSCEngine is ReentrancyGuard {
         pure
         returns (uint256)
     {
+        // If user hasn't minted any DSC, they have perfect health factor
         if (totalDscMinted == 0) return type(uint256).max;
+
+        // Adjust collateral value by liquidation threshold
+        // Example: $1000 ETH * 50/100 = $500 adjusted collateral
         uint256 collateralAdjustedForThreshold = (collateralValueInUsd * LIQUIDATION_THRESHOLD) / LIQUIDATION_PRECISION;
+
+        // Calculate health factor: (adjusted collateral * PRECISION) / debt
+        // Example: ($500 * 1e18) / $100 = 5e18 (health factor of 5)
         return (collateralAdjustedForThreshold * PRECISION) / totalDscMinted;
     }
 
     function revertIfHealthFactorIsBroken(address user) internal view {
+        // Get user's current health factor
         uint256 userHealthFactor = _healthFactor(user);
+
+        // If health factor is below minimum (1), revert the transaction
         if (userHealthFactor < MIN_HEALTH_FACTOR) {
             revert DSCEngine__BreaksHealthFactor(userHealthFactor);
         }
     }
-
-
 
     function getAccountInformation(address user)
         external
         view
         returns (uint256 totalDscMinted, uint256 collateralValueInUsd)
     {
-        // returns the totalDscMinted and the collateralValueInUsd from the `_getAccountInformation` function
+        // External wrapper for _getAccountInformation
+        // Returns how much DSC user has minted and their total collateral value in USD
         (totalDscMinted, collateralValueInUsd) = _getAccountInformation(user);
     }
 
     function getCollateralBalanceOfUser(address user, address token) external view returns (uint256) {
+        // Returns how much of a specific token a user has deposited as collateral
         return s_collateralDeposited[user][token];
     }
 
     function getPrecision() external pure returns (uint256) {
+        // Returns the precision scalar used for calculations (1e18)
         return PRECISION;
     }
 
     function getAdditionalFeedPrecision() external pure returns (uint256) {
+        // Returns additional precision scalar for price feeds (1e10)
         return ADDITIONAL_FEED_PRECISION;
     }
 
     function getLiquidationThreshold() external pure returns (uint256) {
+        // Returns the liquidation threshold (50 = 50% of collateral value used for health factor)
         return LIQUIDATION_THRESHOLD;
     }
 
     function getLiquidationBonus() external pure returns (uint256) {
+        // Returns bonus percentage liquidators get when liquidating (10 = 10% bonus)
         return LIQUIDATION_BONUS;
     }
 
     function getLiquidationPrecision() external pure returns (uint256) {
+        // Returns precision scalar for liquidation calculations (100)
         return LIQUIDATION_PRECISION;
     }
 
     function getMinHealthFactor() external pure returns (uint256) {
+        // Returns minimum health factor before liquidation (1e18 = 1)
         return MIN_HEALTH_FACTOR;
     }
 
+    // Returns the array of all allowed collateral token addresses
+    // This is useful for:
+    // 1. UI interfaces to know which tokens can be used as collateral
+    // 2. Other contracts that need to interact with the system
+    // 3. Checking which tokens are supported without accessing state variables directly
     function getCollateralTokens() external view returns (address[] memory) {
+        // Returns array of all accepted collateral token addresses
         return s_collateralTokens;
     }
 
+    // Returns the address of the DecentralizedStableCoin (DSC) contract
+    // This allows:
+    // 1. External contracts to find the DSC token address
+    // 2. Users to verify which token contract is being used
+    // 3. Integration with other protocols that need to interact with the DSC token
     function getDsc() external view returns (address) {
+        // Returns address of the DSC token contract
         return address(i_dsc);
     }
 
+    // Returns the Chainlink price feed address for a given collateral token
+    // Used for:
+    // 1. Verifying price feed sources
+    // 2. External systems that need to access the same price data
+    // 3. Debugging and auditing price feed configurations
     function getCollateralTokenPriceFeed(address token) external view returns (address) {
+        // Returns Chainlink price feed address for given collateral token
         return s_priceFeeds[token];
     }
 
+    // Returns the current health factor for a specific user
+    // Health factor is a key metric that:
+    // 1. Determines if a user can be liquidated (if < MIN_HEALTH_FACTOR)
+    // 2. Shows how close to liquidation a user is
+    // 3. Helps users monitor their position's safety
     function getHealthFactor(address user) external view returns (uint256) {
+        // External wrapper to get a user's current health factor
         return _healthFactor(user);
     }
 }
