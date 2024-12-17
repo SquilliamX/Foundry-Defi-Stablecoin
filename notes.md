@@ -35,6 +35,12 @@ Getting Started Notes
     - abi.encode Notes & abi.encodePacked Notes
     - How to use abi.encode and abi.decode Notes
     - Function Selector & Function Signature Notes
+    - Merkle Tree & Merkle Proof Notes
+        - What is a Merkle Tree?
+        - Structure / How Merkle Tree Works
+        - What is a Merkle Proof?
+        - Benefits
+    - Signatures Notes
 
 Package Installing Notes
 
@@ -108,6 +114,12 @@ NFT Notes
     - Creating NFTs on IPFS
     - How Creating NFTs on-Chain Works
     - How to Create NFTs on-Chain
+
+AirDrop Notes
+    - What is an Airdrop?
+    - Common Types of Airdrops
+    - Why Do Projects Do Airdrops?
+    - Common Requirements for Airdrops
 
 EIP Notes
     - EIP status terms
@@ -1276,6 +1288,394 @@ if you want to interact with an outside contract from within a contract, its bes
 
 
 If you want more information, you can find it at ` https://updraft.cyfrin.io/courses/advanced-foundry/how-to-create-an-NFT-collection/evm-signatures-selectors ` - This video also goes over how to call any contracts/function even without having an interface
+
+
+
+
+
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+
+
+### Merkle Tree & Merkle Proof Notes
+If we had a dynamic array that can grow indefintely, looping through every item in the array would be incredibly gas expensive and can cause a DOS. To fix this, we can use a `Merkle Proof`. 
+
+Essentially, merkle proofs allow us to prove that some piece of data is in fact in a group of data. 
+Example:
+    If we have a group of data, like a group of addresses with an allowed amount, is my address in that group of addresses? Merkle Proofs enable us to do this, and Merkel Proofs come from Merkel Trees, and Merkel tress are the data strcuture that is used here
+    
+#### What is a Merkle Tree?
+Merkle trees are a data structure in computer science. Merkle trees are used to encrypt blockchain data more securely and efficiently. It was invented by Ralph Merkle in 1979. Ralph Merkle also happens to be one of the inventors of public key cryptography!
+
+Example:
+How is a Merkle tree used to verify eligibility for an airdrop?:
+
+    Answer: A smart contract can store only the Merkle root on-chain, saving more gas than storing every address on an airdrop. The Merkle tree generates a Merkle proof, which can be verified to prove eligibility. This proof authenticates a specific wallet address included in the list of eligible wallets by comparing it to the Merkle root.
+
+
+##### Structure / How Merkle Tree Works
+```js
+                                            [H(H1-4 + H5-8)]                        <------ Root Hash
+                                                    |
+                         +--------------------------+-------------------------+
+                         |                                                    |
+                        H1-4                                                H5-8
+                 [H(H1-2 + H3-4)]                                     [H(H5-6 + H7-8)]           <----Branches(proofs)
+                         |                                                    |
+            +------------+------------+                          +------------+------------+
+            |                         |                          |                         |
+            H1-2                    H3-4                        H5-6                      H7-8
+        [H(Block1+2)]           [H(Block3+4)]               [H(Block5+6)]            [H(Block7+8)]     <-----Branches(proofs)     
+            |                         |                           |                         |
+    +-------+-------+         +-------+-------+           +-------+-------+         +-------+-------+
+    |               |         |               |           |               |         |               |
+Block 1         Block 2    Block 3         Block 4     Block 5         Block 6     Block 7        Block 8     <----Leaves
+"data1"         "data2"    "data3"         "data4"     "data5"         "data6"     "data7"        "data8"
+```
+Note: `H` stands for Hash.
+
+- As you can see from the diagram above, a merkle tree is a binary hash tree where each leaf node contains the hash of a data block.
+- Each non-leaf node contains the hash of its two child nodes
+- The root node (Merkle root) represents a single hash that verifies all data in the tree
+- Typically uses cryptographic hash functions like Keccak256
+
+How it works
+    - Data is divided into blocks/chunks
+    - Each block is hashed to create leaf nodes
+    - Pairs of hashes are combined and hashed again to form parent nodes
+    - Process continues until reaching a single root hash
+    - Creates a hierarchical structure of hashes
+Use cases
+    - Bitcoin and other cryptocurrencies for transaction verification
+    - Git for version control and file integrity
+    - Distributed file systems like IPFS
+    - Peer-to-peer networks for data verification
+    - Certificate transparency logs
+
+#### What is a Merkle Proof?
+A merkle Proof is a way for someone to prove that some data is on one of the Merkle tree's leaves to someone who only knows the root hash.
+
+    How proofs work
+        - Also called "Merkle paths" or "proof of inclusion"
+        - Proves a specific data block is part of the Merkle tree
+        - Only requires providing the sibling hashes along the path to the root
+        - Verifier can reconstruct path to root using these hashes
+        - If reconstructed root matches known root, proof is valid
+
+    Example:
+    What is a Merkle proof used for?
+        To verify the presence of a specific piece of data within a Merkle tree.
+
+
+    Given a Merkle proof, how can the validity of a leaf node be verified?:
+        
+        Answer: By iterating through the proof array hashing each element with the previous computed hash, then compare the final output to the expected root hash.
+
+        
+    Common applications
+        Bitcoin, blockchain, L2 rollups, airdrops and more
+
+#### Benefits
+    - Efficiency
+        - O(log n) proof size and verification time
+        - Only need to store/transmit small proofs instead of entire dataset
+        - Efficient updates - only affected path needs rehashing
+        - Perfect for large datasets and distributed systems
+
+    - Privacy
+        - Reveals minimal information about other data blocks
+        - Can prove inclusion without exposing entire dataset
+        - Supports selective disclosure of data
+        - Useful for zero-knowledge proofs
+    - Security
+        - Tamper-evident structure
+        - Changes in any data block affect the root hash
+        - Computationally infeasible to forge proofs
+        - Based on cryptographic hash functions
+        - Widely tested and proven in production systems
+
+
+#### Using a Merkle Tree & Proofs Example
+
+```js
+
+```
+
+Note: What is the significance of hashing a leaf node twice before verification?
+
+    Answer: Hashing twice helps mitigate second preimage attacks, which could allow someone to create a different input that generates the same hash, potentially leading to unauthorized token claims.
+
+### Signatures Notes
+
+In order to understand signature creation, signature verification and preventing replay attacks, EIP-191 and EIP-712 must be understood first:
+
+#### EIP-191 Notes
+EIP-191 standardizes what the sign data should look like.
+
+EIP-191 is the signed data standard and it proposed the following format for signed data: 
+`0x19<1 byte version><version specific data><data to sign>`.
+Lets break this down:
+
+`0x19`: is the prefix, and this just signifies that the data is a signature.
+
+`<1 byte version>`: this is the version that the signed data is using. this allows different versions to have different signed data structures. 
+    Allowed values of <1 byte version>:
+        - `0x00`: Data with intended validator. The person or smart contract who is going to validate the signature is provided here.
+        - `0x01`: Structured Data: Most commonly used in production apps and is associated with EIP-712.
+        - `0.45`: personal_sign messages.
+
+`<version specific data>`: data associated with that verison and it will be specified. For example, for `0x01`, you have to provide the validator address.
+
+`<data to sign`: this is purely the message we intend to sign, such as a string.
+
+EIP-191 Example:
+```js
+function getSigner191(uint256 message, uint8 _v, bytes32 _r, bytes32 _s) public view returns (address) {
+    // Arguments when calculating hash to validate
+    // 1: byte(0x19) - the initial 0x19 byte
+    // 2: byte(0) - the version byte
+    // 3: version specific data, for version 0, it's the intended validator address
+    // 4-6 : Application specific data
+
+    bytes1 prefix = bytes1(0x19);
+    bytes1 eip191Version = bytes1(0);
+    address indendedValidatorAddress = address(this);
+    bytes32 applicationSpecificData = bytes32(message);
+
+    // 0x19 <1 byte version> <version specific data> <data to sign>
+    bytes32 hashedMessage = 
+        keccak256(abi.encodePacked(prefix, eip191Version, indendedValidatorAddress, applicationSpecificData));
+
+    address signer = ecrecover(hashedMessage, _v, _r, _s);
+    return signer;
+}
+```
+However what if this data to sign, the message, is alot more complicated? A way to format this data that could be more easily understood is the EIP-721 standard:
+
+#### EIP-712 Notes (Recommended)
+EIP-712 standardizes the format of the version of specific data and the data to sign.
+
+EIP-712 structured this data to sign, and also the version-specific data. This made signatures more easy to read and made it so that we could display them inside wallets. Also, it prevents replay attacks!
+
+Note: EIP-712 is key to prevent replay attacks. Replay attacks are where the same transaction can be sent more than once or the same signature used more than once. The extra data in the structure of EIP-712 prevents these replay attacks!
+
+EIP-712(version 0x01) signature structure:
+`0x19 0x01 <domainSeparator> <hashStruct(message)>`
+Let's break this down:
+
+`0x19`: is the prefix, and this just signifies that the data is a signature.
+
+`0x01`: this is the version that the signed data is using.
+
+`<domainSeparator>`: this is the version-specific data. Notes: this example is 0x01 and this is the version that's associated with EIP-712.
+    <domainSeparator> = <hashStruct(eip712Domain)>
+        The domain separator is the hash of the struct, defining the domain of the message being signed, and the EIP712 domain looks like this:
+        ```js
+        struct eip712Domain = {
+            string name,
+            string version,
+            uint256 chainId,
+            address verifyingContract,
+            bytes32 salt
+        }
+        ```
+        This means that smart contracts can know whether the signature was created specifically for that smart contract, because the smart contract itself will be the verifying contract and it will be encoded in the data.
+    
+    This means we can rewrite the data as `0x19 0x01 <hashStruct(eip712Domain)> <hashStruct(message)>`
+
+    `<hashStruct(structData)>` = `keccak256(typeHash || hash(structData))`
+        The hash struct is the hash of type hash plus the hash of the struct itself, so the data.
+        ```js
+        // Here is the hash of our EIP721 domain struct
+        bytes32 constant EIP712DOMAIN_TYPEHASH = 
+        keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+        ```
+        ^ The type hash is a hash of what the actual struct looks like, so what are the types involved here? What is the name of the struct and what are all the types insdie that struct? And then we hash this data together to create the type hash.
+
+        We then create a domain separator struct by providing all of the data necessary, and then we hash together the type hash with all those individual pieces of data by first ABI encoding them together to create some bytes and then hashing that data:
+        ```js
+        // Here, we define what our "domain" struct looks like.
+        eip_712_domain_separator_struct = EIP712Domain({
+        name: "SignatureVerifier",
+        version: "1",
+        chainId: 1,
+        verifyingContract: address(this)
+        });
+        ```
+
+        ```js
+        i_domain_separator = keccak256(
+        abi.encode(
+        EIP712DOMAIN_TYPEHASH,
+        keccak256(bytes(eip_712_domain_separator_struct.name)),
+        keccak256(bytes(eip_712_domain_separator_struct.version)),
+        eip_712_domain_separator_struct.chainId,
+        eip_712_domain_separator_struct.verifyingContract
+        )
+        );
+        ```
+
+        But the hash struct is basically, what does the data look like and what actually is the data, hashed together 
+
+`hashStruct(message)`: what is the type of the message and then what is the message itself?
+    Example:
+    ```js
+    struct Message {
+        uint256 number; // member
+    }
+    ```
+    So Then the message type hash will then just be the hash of the type message:
+    ```js
+    bytes32 public constant MESSAGE_TYPEHASH = keccak256("Message(uint256 number)");
+    ```
+
+    The has struct of the message then becomes the ABI encoded type hash alongside the actual message struct data encoded together and then hashed:
+    ```js
+    // now, we can hash our message struct
+    bytes32 hashedMessage = keccak256(abi.encode(MESSAGE_TYPEHASH, Message({ number: message })));
+    ```
+
+    and this is the hash struct of the message!
+
+So we can thin of this EIP-712 data as just `0x19 0x01 <hash of who verifies this signature, and what the verifier looks like> <hash of signed structured message, and what the signature looks like>`
+
+Full example of EIP-712:
+```js
+contract SignatureVerifier {
+    // ..skipped code
+
+    // Here is the hash of our EIP712 domain struct
+bytes32 constant EIP712DOMAIN_TYPEHASH = keccak256("EIP712Domain(string name,string version,uint256 chainId,address verifyingContract)");
+
+    // ..skipped code
+
+    function getSignerEIP712(uint256 message, uint8 _v, bytes32 _r, bytes32 _s) public view returns (address) {
+        // Arguments when calculating hash to validate
+        // 1: bytes(0x19) - the initial 0x19 byte
+        // 2: byte(1) - the version byte
+        // 3: domainSeparator (includes the typehash of the domain struct)
+        // 4: hashstruct of message (includes the typehash of the message struct)
+
+        // bytes memory prefix = "\x19Ethereum Signed Message:\n32";
+        // bytes32 prefixedHashMessage = keccak256(abi.encodePacked(prefix, nonces[msg.sender], _hashedMessage));
+        // address signer = ecrecover(prefixedHashMessage, _v, _r, _s);
+        // require(msg.sender == signer);
+        // return signer;
+
+        bytes1 prefix = bytes1(0x19);
+        bytes1 eip712Version = bytes1(0x01); // EIP-712 is version 1 of EIP-191
+        bytes32 hashStructOfDomainSeparator = _domain_separator;
+
+        // now, we can hash our message struct
+        bytes32 hashedMessage = keccak256(abi.encode(MESSAGE_TYPEHASH, Message({ number: message })));
+
+        // And finally, combine them all (when combined together is known as the `digest`)(the definition of a digest is any data resulting after a hash.)
+        bytes32 digest = keccak256(abi.encodePacked(prefix, eip712Version, hashStructOfDomainSeparator, hashedMessage));
+        // call the ECRecover with this digest and the signature to retrieve the actual signer.
+        return ecrecover(digest, _v, _r, _s);
+    }
+
+    // Function to verify if a signature is valid for a given message and signer using EIP-712
+function verifySignerEIP712(
+    // The message that was signed
+    uint256 message,
+    // components of the signature
+    uint8 _v,
+    bytes32 _r,
+    bytes32 _s,
+    // The address of the expected signer
+    address signer
+)
+    public
+    view
+    returns (bool)
+{
+    // Recover the address of the actual signer using EIP-712 signature recovery
+    address actualSigner = getSignerEIP712(message, _v, _r, _s);
+    
+    // Verify that the recovered signer matches the expected signer
+    // Will revert if they don't match
+    require(signer == actualSigner);
+    
+    // Return true if verification passed
+    // (function will revert before reaching here if verification fails)
+    return true;
+}
+
+    // ..skipped code
+}
+```
+
+Note:
+Digest: is any data resulting after a hash and you often see it referred to when talking about signatures after you have hashed the message and combined it with all of the other data assocaited with EIP-712. So don't be confused if you see `digest` in another context.
+
+
+#### OpenZeppelin Signature Notes
+Using Openzeppelin, alot of the proccess of signatures can be done for us. All we need to do is create the message typehash and hash it together with the message data to create the hash struct of the message. We can then pass this as an argument to the function `_hashTypedDataV4` and this will add the EIP712 domain and the domain type hash and hash it all together to create the `digest`. This will be done in `getMessageHash` to get the message-hash/fully-encoded-EIP-712-message, and then we pass this through to `getSignerOZ` and this will call `ECDSA.tryRecover` from openZeppellin. TryRecover checks the s value of the signature to check the signature maleability and then uses the ECRecover precomplile to retrieve the signer (tryRecover also checks if the signer returned is the zero address to make sure its a valid address) which we can then compare to the actual signer that we had to verify the signature
+```js
+contract SignatureVerifier {
+    // Define the type hash for the Message struct using keccak256
+    bytes32 public constant MESSAGE_TYPEHASH = keccak256(
+        "Message(uint256 message)"
+    );
+
+    // Returns the hash of the fully encoded EIP712 message for this domain i.e. the keccak256 digest of an EIP-712
+    function getMessageHash(
+        string _message,
+    ) public view returns (bytes32) {
+        return
+        // adds to EIP712 domain and the domain type hash and hash it all together to create the digest
+            _hashTypedDataV4(
+                // hash the message typehash with the message data to create the hash struct of the message
+                keccak256(
+                    abi.encode(
+                        MESSAGE_TYPEHASH,
+                        Message({message: _message})
+                    )
+                )
+            );
+    }
+
+
+    function getSignerOZ(uint256 digest, uint8 _v, bytes32 _r, bytes32 _s) public pure returns (address) {
+    // Convert the message digest to bytes32
+    bytes32 hashedMessage = bytes32(message);
+    
+    // Recover the signer's address using ECDSA.tryRecover
+    (address signer, /*ECDSA.RecoverError recoverError*/, /*bytes32 signatureLengthV*/) = 
+        ECDSA.tryRecover(hashedMessage, _v, _r, _s);
+    
+    // The above is equivalent to each of the following:
+    // address signer = ECDSA.recover(hashedMessage, _v, _r, _s);
+    // address signer = ECDSA.recover(hashedMessage, _r, _s, _v);
+    
+    // bytes memory packedSignature = abi.encodePacked(_r, _s, _v); // <-- Yes, the order here is different!
+    // address signer = ECDSA.recover(hashedMessage, packedSignature);
+    
+    return signer;
+    }
+
+    function verifySignerOZ(
+    uint256 message,
+    uint8 _v,
+    bytes32 _r,
+    bytes32 _s,
+    address signer
+    )
+    public
+    pure
+    returns (bool)
+    {
+    // You can also use isValidSignatureNow
+    // pass the fully-encoded-EIP-712-message
+    address actualSigner = getSignerOZ(getMessageHash(message), _v, _r, _s);
+    require(actualSigner == signer);
+    return true;
+    }
+}
+```
+
 
 
 
@@ -2540,9 +2940,97 @@ example: from `foundry-smart-contract-lottery-f23`
         vm.stopBroadcast();
 ```
 
-`vm.readFile`: in order to use this cheatcode, you need to activate fs_permissions in your `foundry.toml`:
+`vm.readFile`: reads from the file you point to
+
+example from `NFTs-2024/script
+/DeployMoodNft.s.sol`:
 ```js
+// Deployment contract that inherits from Forge's Script contract
+contract DeployMoodNft is Script {
+    // Main deployment function that returns the deployed MoodNft instance
+    function run() external returns (MoodNft) {
+        // Read SVG files from the local filesystem using Forge's vm.readFile
+        string memory sadSvg = vm.readFile("./img/sad.svg");
+        string memory happySvg = vm.readFile("./img/happy.svg");
+
+        // Start recording transactions for deployment
+        vm.startBroadcast();
+        // Deploy new MoodNft contract with converted SVG URIs
+        // svgToImageURI converts raw SVG to base64 encoded data URI
+        MoodNft moodNft = new MoodNft(svgToImageURI(sadSvg), svgToImageURI(happySvg));
+        // Stop recording transactions
+        vm.stopBroadcast();
+        // Return the deployed contract instance
+        return moodNft;
+    }
+```
+Note: in order to use `vm.readFile` cheatcode, you need to activate fs_permissions in your `foundry.toml`:
+```js
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+// the fs_permissions should be above the remappings:
 fs_permissions = [{ access = "read", path = "./img/" /* img should be replaced with the folder that you want to readFiles from. In this example i want to use readFile on my `img` folder */ }]
+remappings = ['@openzeppelin/contracts=lib/openzeppelin-contracts/contracts']
+```
+
+
+
+
+`vm.writeFile`: writes code into the file you point to
+example from `merkle-airdrop/script/GenerateInput.s.sol`
+```js
+// Merkle tree input file generator script
+contract GenerateInput is Script {
+    uint256 private constant AMOUNT = 25 * 1e18;
+    string[] types = new string[](2);
+    uint256 count;
+    string[] whitelist = new string[](4);
+    string private constant  INPUT_PATH = "/script/target/input.json";
+    
+    function run() public {
+        types[0] = "address";
+        types[1] = "uint";
+        whitelist[0] = "0x6CA6d1e2D5347Bfab1d91e883F1915560e09129D";
+        whitelist[1] = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+        whitelist[2] = "0x2ea3970Ed82D5b30be821FAAD4a731D35964F7dd";
+        whitelist[3] = "0xf6dBa02C01AF48Cf926579F77C9f874Ca640D91D";
+        count = whitelist.length;
+        string memory input = _createJSON();
+        // write to the output file the stringified output json tree dumpus 
+        vm.writeFile(string.concat(vm.projectRoot(), INPUT_PATH), input);
+
+        console.log("DONE: The output is found at %s", INPUT_PATH);
+    }
+
+    function _createJSON() internal view returns (string memory) {
+        string memory countString = vm.toString(count); // convert count to string
+        string memory amountString = vm.toString(AMOUNT); // convert amount to string
+        string memory json = string.concat('{ "types": ["address", "uint"], "count":', countString, ',"values": {');
+        for (uint256 i = 0; i < whitelist.length; i++) {
+            if (i == whitelist.length - 1) {
+                json = string.concat(json, '"', vm.toString(i), '"', ': { "0":', '"',whitelist[i],'"',', "1":', '"',amountString,'"', ' }');
+            } else {
+            json = string.concat(json, '"', vm.toString(i), '"', ': { "0":', '"',whitelist[i],'"',', "1":', '"',amountString,'"', ' },');
+            }
+        }
+        json = string.concat(json, '} }');
+        
+        return json;
+    }
+}
+```
+Note: in order to use `vm.writeFile` cheatcode, you need to activate fs_permissions in your `foundry.toml`:
+```js
+[profile.default]
+src = "src"
+out = "out"
+libs = ["lib"]
+// the fs_permissions should be above the remappings:
+fs_permissions = [{ access = "read-write", path = "./" /* this says it can read from our root directory, if you want to make it more narrow, you can change the path to the file/folder you want to write into*/}]
+
+remappings = ['@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/', 'forge-std=lib/forge-std/src/']
 ```
 
 
@@ -5032,6 +5520,56 @@ fs_permissions = [{ access = "read", path = "./img/" /* img should be replaced w
 ```
 
 Then in this example, after we read/save the SVG files, we write the function `svgToImageURI` that adds the baseURL (so our browser can decode the base64 encoded text) to the encoded text after it encodes it. then it passes these BaseURL+encoded-strings to the constructor of the main NFT contract. 
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+
+
+## Airdrop Notes
+
+### What is an Airdrop?
+An airdrop is a marketing strategy where cryptocurrency projects or companies distribute free tokens or NFTs to specific wallet-addresses/people. Think of it like a digital giveaway or promotional campaign.
+
+### Common Types of Airdrops
+Airdrops can be any type of token, including but not limited to: ERC20s, ERC115, ERC721s(NFTs) and more!
+
+    1. Standard Airdrop
+        Free tokens sent to existing wallet addresses
+        Usually requires basic tasks like following social media accounts
+
+    2. Holder Airdrop
+        Tokens given to people who already hold certain cryptocurrencies
+            Example: holders of ETH receiving new tokens from Ethereum-based projects
+
+    3. Governance Airdrop
+        Tokens given to early users of a protocol
+    Provides voting rights in the project's governance
+        Example: Uniswap's UNI token airdrop to early users
+
+### Why Do Projects Do Airdrops?
+    - Create awareness for their project
+    - Reward early adopters and community members
+    - Distribute tokens widely for decentralization
+    - Generate buzz and marketing momentum
+    - Helps to "bootstrap" the project
+    - and more!
+    
+### Common Requirements for Airdrops
+Normally there is some type of eligibility criteria in order to be able to receive an airdrop, examples include:
+
+    - Holding minimum amounts of certain cryptocurrencies
+    - Completing social media tasks (following, sharing, etc.)
+    - Being an early user of the platform
+    - Participating in testnet activities
+    - Using their services
+    - Developing on their protocol on github
+    - Be apart of their community
+
+
+
+
+
+
+
+
 
 ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
 
