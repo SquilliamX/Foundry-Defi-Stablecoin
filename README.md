@@ -51,16 +51,6 @@ graph TD
     style OL fill:#99ff99,stroke:#333,stroke-width:2px
 ```
 
-This diagram shows:
-
-- Core protocol components (orange: DSCEngine, blue: DSC token, green: OracleLib)
-- External integrations (Chainlink, WETH, WBTC)
-- User interaction flows
-- Internal system interactions
-- Collateral flows
-
-### 🔧 Core Components
-
 1. **DSCEngine.sol**
 
    - Main protocol logic
