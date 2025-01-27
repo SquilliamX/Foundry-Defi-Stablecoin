@@ -14,6 +14,51 @@ This protocol implements a decentralized stablecoin (DSC) pegged to USD, backed 
 
 ## 🏗️ Technical Architecture
 
+### 📊 System Architecture Diagram
+
+```mermaid
+graph TD
+    subgraph External
+        User[User/dApp]
+        CP[Chainlink Price Feeds]
+        WETH[WETH Token]
+        WBTC[WBTC Token]
+    end
+
+    subgraph Protocol Core
+        DSE[DSCEngine]
+        DSC[DecentralizedStableCoin]
+        OL[OracleLib]
+    end
+
+    %% User interactions
+    User -->|Deposit Collateral| DSE
+    User -->|Mint/Burn DSC| DSE
+    User -->|Transfer DSC| DSC
+
+    %% Internal interactions
+    DSE -->|Mint/Burn| DSC
+    DSE -->|Get Prices| OL
+    OL -->|Validate Prices| CP
+
+    %% Collateral flows
+    WETH -->|Collateral| DSE
+    WBTC -->|Collateral| DSE
+
+    %% Special nodes
+    style DSE fill:#ff9900,stroke:#333,stroke-width:2px
+    style DSC fill:#66b2ff,stroke:#333,stroke-width:2px
+    style OL fill:#99ff99,stroke:#333,stroke-width:2px
+```
+
+This diagram shows:
+
+- Core protocol components (orange: DSCEngine, blue: DSC token, green: OracleLib)
+- External integrations (Chainlink, WETH, WBTC)
+- User interaction flows
+- Internal system interactions
+- Collateral flows
+
 ### 🔧 Core Components
 
 1. **DSCEngine.sol**
